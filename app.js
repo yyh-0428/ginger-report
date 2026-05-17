@@ -240,7 +240,8 @@ function parseCSV(raw) {
       isSelf = v === '1' || v === 'true' || v === '我' || /self|me/i.test(v);
     } else if (colMap.sender !== undefined) {
       const senderName = cols[colMap.sender].trim();
-      isSelf = senderName === '我' || senderName === document.getElementById('selfName').value;
+      const selfVal = document.getElementById('selfName').value;
+      isSelf = senderName === '我' || (selfVal && senderName === selfVal);
     }
 
     if (isSelf === null) {
@@ -287,18 +288,16 @@ function parseJSON(raw) {
   const data = JSON.parse(raw);
   const messages = Array.isArray(data) ? data : (data.messages || data.data || data.chat || data.records || []);
 
-  STATE.rawData = { self: [], partner: [] };
+  // First pass: collect all messages with raw data
+  const allMsgs = [];
+  const nameSet = {};
   for (const m of messages) {
-    // Skip system messages and non-text messages
     const msgType = m.type ?? m.msg_type;
     if (msgType === 10000 || msgType === 'system') continue;
     if (msgType && msgType !== 1 && msgType !== 'text' && msgType !== '1') continue;
 
     const content = cleanMessage(String(m.content || m.text || m.message || m.msg || ''));
     if (!content) continue;
-    const isSelf = m.is_sender !== undefined
-      ? (m.is_sender === 1 || m.is_sender === true || m.isSender === 1 || m.isSender === true || m.isSelf || m.is_self)
-      : (STATE.rawData.self.length <= STATE.rawData.partner.length);
 
     let ts;
     if (m.timestamp) ts = /^\d{10,13}$/.test(String(m.timestamp)) ? parseInt(m.timestamp) : new Date(m.timestamp).getTime() / 1000;
@@ -308,9 +307,31 @@ function parseJSON(raw) {
     else if (m.ts) ts = parseInt(m.ts);
 
     const senderName = m.display_name || m.sender_name || m.senderName || m.name || '';
-    (isSelf ? STATE.rawData.self : STATE.rawData.partner).push({ content, ts, senderName });
+    const isSenderRaw = m.is_sender;
+    allMsgs.push({ content, ts, senderName, isSenderRaw });
+    if (senderName) nameSet[senderName] = (nameSet[senderName] || 0) + 1;
   }
-  if (STATE.rawData.self.length < 2 && STATE.rawData.partner.length < 2) {
+
+  // Determine self/partner split
+  const hasSenderFlag = allMsgs.some(m => m.isSenderRaw === true || m.isSenderRaw === 1);
+  const names = Object.keys(nameSet);
+
+  STATE.rawData = { self: [], partner: [] };
+  for (const msg of allMsgs) {
+    let isSelf;
+    if (hasSenderFlag) {
+      isSelf = msg.isSenderRaw === true || msg.isSenderRaw === 1;
+    } else if (names.length >= 2) {
+      // Use first name as self, second as partner
+      isSelf = msg.senderName === names[0];
+    } else {
+      isSelf = STATE.rawData.self.length <= STATE.rawData.partner.length;
+    }
+    delete msg.isSenderRaw;
+    (isSelf ? STATE.rawData.self : STATE.rawData.partner).push(msg);
+  }
+
+  if (STATE.rawData.self.length + STATE.rawData.partner.length < 2) {
     throw new Error('JSON 中消息数量不足');
   }
 }
@@ -336,7 +357,8 @@ function parseTXT(raw) {
         const sender = m[1].trim();
         const content = cleanMessage(m[2].trim());
         if (!content) break;
-        const isSelf = sender === '我' || sender === (document.getElementById('selfName').value || '我');
+        const selfVal = document.getElementById('selfName').value;
+        const isSelf = sender === '我' || (selfVal && sender === selfVal);
         (isSelf ? STATE.rawData.self : STATE.rawData.partner).push({ content, ts: null, senderName: sender });
         matched = true;
         break;
@@ -372,7 +394,8 @@ function parseMarkdown(raw) {
       const sender = m[1].trim();
       const content = cleanMessage(m[2].trim());
       if (!content) continue;
-      const isSelf = sender === '我' || sender === (document.getElementById('selfName').value || '我');
+      const selfVal = document.getElementById('selfName').value;
+      const isSelf = sender === '我' || (selfVal && sender === selfVal);
       (isSelf ? STATE.rawData.self : STATE.rawData.partner).push({ content, ts: null, senderName: sender });
     }
   }
@@ -1628,7 +1651,7 @@ async function generateReport() {
         const isSelf = e.querySelector('select').value === 'self';
         const content = e.querySelector('input').value.trim();
         if (content) {
-          (isSelf ? STATE.rawData.self : STATE.rawData.partner).push({ content: cleanMessage(content), ts: null });
+          (isSelf ? STATE.rawData.self : STATE.rawData.partner).push({ content: cleanMessage(content), ts: null, senderName: isSelf ? '我' : '对方' });
         }
       });
       if (STATE.rawData.self.length + STATE.rawData.partner.length < 5) {
