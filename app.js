@@ -397,11 +397,24 @@ function computeStats() {
       }
     });
 
+    const pMonthly = {};
+    const pWeekday = new Array(7).fill(0);
+    partnerMsgs.forEach(m => {
+      if (m.ts) {
+        const d = new Date(m.ts * 1000);
+        pWeekday[(d.getDay() + 6) % 7]++;
+        const monthKey = d.toISOString().split('T')[0].substring(0, 7);
+        pMonthly[monthKey] = (pMonthly[monthKey] || 0) + 1;
+      }
+    });
+
     partnerStats = {
       total: partnerMsgs.length,
       wordFreq: pWordFreq,
       daily: pDaily,
       hourly: pHourly,
+      weekday: pWeekday,
+      monthly: pMonthly,
     };
   }
 
@@ -429,13 +442,16 @@ function computeStats() {
 // ── 图表生成 (ECharts) ──────────────────────────────
 
 function createCharts(containerId) {
-  // Dispose old chart instances before replacing
+  // Dispose old chart instances and clean up year switchers
   Object.values(STATE.charts).forEach(c => { try { c.dispose(); } catch {} });
   STATE.charts = {};
 
   const s = STATE.stats.self;
   const container = document.getElementById(containerId);
   const theme = { textColor: '#5a4a3a', accent: '#c68642', brown: '#8b5e3c', teal: '#6faa9c' };
+
+  // Clean up stale year switchers from previous renders
+  container.querySelectorAll('.hm-year-switcher').forEach(el => el.remove());
 
   // Hourly chart
   function chartHourly() {
@@ -629,6 +645,7 @@ function createCharts(containerId) {
     // Year switcher
     if (years.length > 1) {
       const switcher = document.createElement('div');
+      switcher.className = 'hm-year-switcher';
       switcher.style.cssText = 'text-align:center;margin-bottom:8px';
       years.forEach(y => {
         const btn = document.createElement('button');
@@ -669,7 +686,7 @@ function createCharts(containerId) {
       ['#ede5dc', '#d4a882', '#b87040', '#8b5e3c', '#5a3020']);
   }
   if (STATE.stats.hasPartner && STATE.stats.partner && Object.keys(STATE.stats.partner.daily).length > 0) {
-    chartHeatmap('chart-hm-partner', STATE.stats.partner.daily, `${partnerName} 的聊天热力图',
+    chartHeatmap('chart-hm-partner', STATE.stats.partner.daily, `${partnerName} 的聊天热力图`,
       ['#d8edea', '#8abfb8', '#5a9b93', '#4a7b6f', '#2e5048']);
   }
 }
@@ -930,11 +947,32 @@ function generateReportHTML() {
   // Reliability
   const reliability = p?.self?.reliability || '';
 
-  const html = `<!DOCTYPE html>
-<html lang="zh">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>微信聊天人格分析 · ${selfName}${hasPartner ? ' & ' + partnerName : ''}</title>
-<style>
+  const bodyHTML = `
+<div class="hdr">
+  <h1>🍪 微信聊天人格分析报告</h1>
+  <div class="hdr-meta">${new Date().toLocaleDateString('zh-CN',{year:'numeric',month:'long',day:'numeric'})}</div>
+  <div class="hdr-vs">
+    <div class="hdr-pill"><div class="hdr-av av-s">${selfName.charAt(0)}</div><span style="font-size:.85em;font-weight:600">${selfName}</span></div>
+    ${hasPartner ? `<span style="opacity:.35;font-weight:200">VS</span><div class="hdr-pill"><div class="hdr-av av-p">${partnerName.charAt(0)}</div><span style="font-size:.85em;font-weight:600">${partnerName}</span></div>` : ''}
+  </div>
+</div>
+<div class="stats">
+  <div class="stat"><div class="stat-num">${s.total.toLocaleString()}</div><div class="stat-lbl">${selfName} 发出的消息</div></div>
+  <div class="stat"><div class="stat-num">${s.avgLength}</div><div class="stat-lbl">平均消息字数</div></div>
+  <div class="stat"><div class="stat-num">${spanStr}</div><div class="stat-lbl">数据覆盖时长</div></div>
+</div>
+${section('📊 消息行为分析', chartsHTML)}
+${big5HTML ? section('🧠 大五人格分析 (Big Five)', big5HTML) : ''}
+${mbtiHTML ? section('🔮 MBTI 推断', mbtiHTML) : ''}
+${styleHTML ? section('✨ AI 对' + (hasDualAI ? '你们' : '你') + '的总结', styleHTML) : ''}
+${reliability ? `<div style="font-size:.78em;color:#8a7a6a;text-align:center;padding:12px">📋 ${reliability}</div>` : ''}
+<div class="disc">⚠️ 本报告基于语言模式的统计推断，仅供娱乐与自我探索，不构成心理学诊断。<br>MBTI 信效度存在学术争议；Big Five 具有更强的研究支撑，但仍需谨慎解读。<div class="brand">🍪 姜饼探AI · Ginger Report v2.0</div></div>`;
+
+  return bodyHTML;
+}
+
+function getFullReportHTML(bodyHTML, selfName, partnerName, hasPartner) {
+  const STYLES = `
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'PingFang SC','Hiragino Sans GB','Microsoft YaHei',system-ui,sans-serif;background:#f5f0e8;color:#2d2018;line-height:1.6;padding:20px 16px}
 .c{max-width:880px;margin:0 auto}
@@ -954,31 +992,14 @@ body{font-family:'PingFang SC','Hiragino Sans GB','Microsoft YaHei',system-ui,sa
 .stat-lbl{font-size:.76em;color:#8a7a6a;margin-top:6px}
 .disc{text-align:center;font-size:.74em;color:#8a7a6a;padding:20px 16px;border-top:1.5px solid #e8d5c0;line-height:2}
 .brand{font-weight:700;color:#c68642;margin-top:10px;letter-spacing:.06em}
-@media(max-width:600px){.stats{grid-template-columns:1fr}}
-</style></head>
-<body><div class="c">
-<div class="hdr">
-  <h1>🍪 微信聊天人格分析报告</h1>
-  <div class="hdr-meta">${new Date().toLocaleDateString('zh-CN',{year:'numeric',month:'long',day:'numeric'})}</div>
-  <div class="hdr-vs">
-    <div class="hdr-pill"><div class="hdr-av av-s">${selfName.charAt(0)}</div><span style="font-size:.85em;font-weight:600">${selfName}</span></div>
-    ${hasPartner ? `<span style="opacity:.35;font-weight:200">VS</span><div class="hdr-pill"><div class="hdr-av av-p">${partnerName.charAt(0)}</div><span style="font-size:.85em;font-weight:600">${partnerName}</span></div>` : ''}
-  </div>
-</div>
-<div class="stats">
-  <div class="stat"><div class="stat-num">${s.total.toLocaleString()}</div><div class="stat-lbl">${selfName} 发出的消息</div></div>
-  <div class="stat"><div class="stat-num">${s.avgLength}</div><div class="stat-lbl">平均消息字数</div></div>
-  <div class="stat"><div class="stat-num">${spanStr}</div><div class="stat-lbl">数据覆盖时长</div></div>
-</div>
-${section('📊 消息行为分析', chartsHTML)}
-${big5HTML ? section('🧠 大五人格分析 (Big Five)', big5HTML) : ''}
-${mbtiHTML ? section('🔮 MBTI 推断', mbtiHTML) : ''}
-${styleHTML ? section('✨ AI 对' + (hasDualAI ? '你们' : '你') + '的总结', styleHTML) : ''}
-${reliability ? `<div style="font-size:.78em;color:#8a7a6a;text-align:center;padding:12px">📋 ${reliability}</div>` : ''}
-<div class="disc">⚠️ 本报告基于语言模式的统计推断，仅供娱乐与自我探索，不构成心理学诊断。<br>MBTI 信效度存在学术争议；Big Five 具有更强的研究支撑，但仍需谨慎解读。<div class="brand">🍪 姜饼探AI · Ginger Report v2.0</div></div>
+@media(max-width:600px){.stats{grid-template-columns:1fr}}`;
+  return `<!DOCTYPE html><html lang="zh"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>微信聊天人格分析 · ${selfName}${hasPartner ? ' & ' + partnerName : ''}</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"><\/script>
+<script src="https://cdn.jsdelivr.net/npm/echarts-wordcloud@2.1.0/dist/echarts-wordcloud.min.js"><\/script>
+<style>${STYLES}</style></head><body><div class="c">
+${bodyHTML}
 </div></body></html>`;
-
-  return html;
 }
 
 // ── 主流程 ────────────────────────────────────────────
@@ -1018,12 +1039,12 @@ async function generateReport() {
 
     // Step 2: Generate report HTML structure
     updateProgress(30, '正在生成报告框架...');
-    const reportHTML = generateReportHTML();
+    const bodyHTML = generateReportHTML();
 
     // Step 3: Show report
     updateProgress(40, '正在渲染报告...');
     const reportContent = document.getElementById('reportContent');
-    reportContent.innerHTML = reportHTML;
+    reportContent.innerHTML = bodyHTML;
     document.getElementById('reportWrap').classList.add('show');
 
     // Step 4: Create charts
@@ -1043,8 +1064,8 @@ async function generateReport() {
         await analyzePersonality();
         // Regenerate report with AI data
         updateProgress(85, '正在整合 AI 分析结果...');
-        const newHTML = generateReportHTML();
-        reportContent.innerHTML = newHTML;
+        const newBody = generateReportHTML();
+        reportContent.innerHTML = newBody;
         await sleep(200);
         createCharts('reportContent');
         await sleep(300);
@@ -1079,9 +1100,12 @@ function updateProgress(pct, text) {
 }
 
 function downloadReport() {
-  const reportHTML = document.getElementById('reportContent').innerHTML;
-  if (!reportHTML) return;
-  const html = generateReportHTML(); // re-generate for full HTML
+  const reportBody = document.getElementById('reportContent').innerHTML;
+  if (!reportBody) return;
+  const selfName = document.getElementById('selfName').value || '我';
+  const partnerName = document.getElementById('partnerName').value || '对方';
+  const hasPartner = STATE.stats.hasPartner && STATE.stats.partner;
+  const html = getFullReportHTML(reportBody, selfName, partnerName, hasPartner);
   const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
