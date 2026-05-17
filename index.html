@@ -144,6 +144,26 @@ body {
   padding: 20px; flex-wrap: wrap;
 }
 
+/* Report inner styles (for inline display) */
+#reportContent { overflow: hidden; }
+.hdr{background:linear-gradient(135deg,#3a2a1a,#5a3a28);border-radius:20px;padding:36px 28px;color:#fff;text-align:center;position:relative;overflow:hidden;margin-bottom:16px}
+.hdr::after{content:'';position:absolute;inset:0;background:repeating-linear-gradient(-45deg,transparent,transparent 40px,rgba(255,255,255,.03) 40px,rgba(255,255,255,.03) 41px)}
+.hdr h1{font-size:1.6rem;font-weight:700;letter-spacing:.04em;position:relative;z-index:1}
+.hdr-meta{opacity:.5;font-size:.82em;margin-top:6px;position:relative;z-index:1}
+.hdr-vs{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:16px;position:relative;z-index:1}
+.hdr-pill{display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.18);border-radius:50px;padding:4px 14px 4px 4px}
+.hdr-av{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px}
+.av-s{background:linear-gradient(135deg,#8b5e3c,#d4956a);color:#fff}
+.av-p{background:linear-gradient(135deg,#4a7b6f,#6faa9c);color:#fff}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+.stat{background:#fdfaf6;border-radius:12px;padding:18px 12px 16px;text-align:center;box-shadow:0 2px 8px rgba(58,42,26,.04);position:relative}
+.stat::after{content:'';position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:32px;height:3px;background:linear-gradient(90deg,#c68642,#d4956a);border-radius:2px 2px 0 0}
+.stat-num{font-size:1.5rem;font-weight:700;color:#8b5e3c;font-variant-numeric:tabular-nums}
+.stat-lbl{font-size:.76em;color:#8a7a6a;margin-top:6px}
+.disc{text-align:center;font-size:.74em;color:#8a7a6a;padding:20px 16px;border-top:1.5px solid #e8d5c0;line-height:2}
+.brand{font-weight:700;color:#c68642;margin-top:10px;letter-spacing:.06em}
+@media(max-width:600px){.stats{grid-template-columns:1fr}}
+
 /* Manual input helper */
 .manual-hint { font-size: .78em; color: var(--tx400); margin-top: 6px; }
 .msg-entry { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
