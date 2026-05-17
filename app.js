@@ -68,15 +68,31 @@ function handleFile(file) {
   const reader = new FileReader();
   reader.onload = () => {
     const text = reader.result;
-    try {
-      if (ext === 'csv' || STATE.mode === 'csv') parseCSV(text);
-      else if (ext === 'json' || STATE.mode === 'json') parseJSON(text);
-      else if (ext === 'md' || ext === 'markdown' || STATE.mode === 'md') parseMarkdown(text);
-      else parseTXT(text);
-      toast('✅ 文件已加载，共 ' + (STATE.rawData.self.length + STATE.rawData.partner.length) + ' 条消息');
-    } catch (e) {
-      toast('❌ 文件解析失败：' + e.message);
+    let parsed = false;
+    // Try all parsers in order: prefer extension, then try all as fallback
+    const parsers = [];
+    if (ext === 'csv' || STATE.mode === 'csv') parsers.push(parseCSV);
+    if (ext === 'json' || STATE.mode === 'json') parsers.push(parseJSON);
+    if (ext === 'md' || ext === 'markdown' || STATE.mode === 'md') parsers.push(parseMarkdown);
+    parsers.push(parseTXT);
+    // Also try other parsers as fallback if primary fails
+    [parseCSV, parseJSON, parseTXT, parseMarkdown].forEach(p => { if (!parsers.includes(p)) parsers.push(p); });
+
+    for (const parseFn of parsers) {
+      try {
+        STATE.rawData = { self: [], partner: [] };
+        parseFn(text);
+        const total = STATE.rawData.self.length + STATE.rawData.partner.length;
+        if (total >= 5) {
+          toast('✅ 文件已加载，共 ' + total + ' 条消息');
+          parsed = true;
+          break;
+        }
+      } catch { /* try next parser */ }
+    }
+    if (!parsed) {
       STATE.rawData = null;
+      toast('❌ 无法解析此文件，请检查格式（支持 CSV/JSON/TXT/Markdown）');
     }
   };
   reader.readAsText(file, 'UTF-8');
@@ -138,6 +154,23 @@ function parseCSV(raw) {
     colMap.content = firstLine.length - 1;
   }
 
+  // Validate content column — check first few data rows actually have text
+  let validContent = 0;
+  for (let i = dataStart; i < Math.min(dataStart + 5, lines.length); i++) {
+    const cols = parseCSVLine(lines[i]);
+    if (cols[colMap.content] && cols[colMap.content].trim().length > 0) validContent++;
+  }
+  if (validContent === 0) {
+    // Content column is wrong — try each column to find the one with text
+    const firstLine = parseCSVLine(lines[dataStart]);
+    for (let c = 0; c < firstLine.length; c++) {
+      if (firstLine[c] && firstLine[c].trim().length > 1) {
+        colMap.content = c;
+        break;
+      }
+    }
+  }
+
   STATE.rawData = { self: [], partner: [] };
 
   for (let i = dataStart; i < lines.length; i++) {
@@ -178,7 +211,7 @@ function parseCSV(raw) {
     else STATE.rawData.partner.push(msg);
   }
 
-  if (STATE.rawData.self.length < 10 && STATE.rawData.partner.length < 10) {
+  if (STATE.rawData.self.length < 2 && STATE.rawData.partner.length < 2) {
     throw new Error('解析出的消息太少，请检查 CSV 格式');
   }
 }
@@ -222,7 +255,7 @@ function parseJSON(raw) {
 
     (isSelf ? STATE.rawData.self : STATE.rawData.partner).push({ content, ts });
   }
-  if (STATE.rawData.self.length < 10 && STATE.rawData.partner.length < 10) {
+  if (STATE.rawData.self.length < 2 && STATE.rawData.partner.length < 2) {
     throw new Error('JSON 中消息数量不足');
   }
 }
@@ -233,10 +266,11 @@ function parseTXT(raw) {
 
   // Common patterns: "Name: message", "Name - message", "YYYY-MM-DD HH:MM Name message"
   const patterns = [
-    /^(.+?)[：:]\s*(.+)$/,
-    /^(.+?)\s+-\s+(.+)$/,
-    /^\d{2,4}[-\/]\d{1,2}[-\/]\d{1,2}\s+\d{1,2}:\d{2}(?::\d{2})?\s+(.+?)[：:\s]+(.+)$/,
-    /^(.+?)\s{2,}(.+)$/,
+    /^\d{2,4}[-\/]\d{1,2}[-\/]\d{1,2}\s+\d{1,2}:\d{2}(?::\d{2})?\s+(.+?)[：:]\s*(.+)$/,  // 时间 名称: 内容
+    /^\d{2,4}[-\/]\d{1,2}[-\/]\d{1,2}\s+\d{1,2}:\d{2}(?::\d{2})?\s+(.+?)\s+(.+)$/,        // 时间 名称 内容
+    /^(.+?)[：:]\s*(.+)$/,                                                                    // 名称: 内容
+    /^(.+?)\s+-\s+(.+)$/,                                                                     // 名称 - 内容
+    /^(.+?)\s{2,}(.+)$/,                                                                      // 名称  内容（多空格）
   ];
 
   for (const line of lines) {
@@ -262,7 +296,7 @@ function parseTXT(raw) {
       }
     }
   }
-  if (STATE.rawData.self.length < 5 && STATE.rawData.partner.length < 5) {
+  if (STATE.rawData.self.length < 2 && STATE.rawData.partner.length < 2) {
     throw new Error('TXT 解析失败，请使用"发送者: 内容"格式，每行一条');
   }
 }
@@ -287,7 +321,7 @@ function parseMarkdown(raw) {
       (isSelf ? STATE.rawData.self : STATE.rawData.partner).push({ content, ts: null });
     }
   }
-  if (STATE.rawData.self.length < 5 && STATE.rawData.partner.length < 5) {
+  if (STATE.rawData.self.length < 2 && STATE.rawData.partner.length < 2) {
     throw new Error('Markdown 解析失败，请确认格式为"**名称**: 内容"');
   }
 }
@@ -341,7 +375,7 @@ function computeStats() {
   const partnerMsgs = STATE.rawData.partner;
   const allRaw = [...selfMsgs, ...partnerMsgs];
 
-  if (selfMsgs.length < 10) throw new Error('自己消息数量不足（需要至少 10 条）');
+  if (selfMsgs.length < 5) throw new Error('自己消息数量不足（需要至少 5 条）');
 
   // ── Self stats ──
   const selfText = selfMsgs.map(m => m.content);
@@ -1017,13 +1051,13 @@ async function generateReport() {
           (isSelf ? STATE.rawData.self : STATE.rawData.partner).push({ content: cleanMessage(content), ts: null });
         }
       });
-      if (STATE.rawData.self.length + STATE.rawData.partner.length < 10) {
-        throw new Error('请至少输入 10 条消息');
+      if (STATE.rawData.self.length + STATE.rawData.partner.length < 5) {
+        throw new Error('请至少输入 5 条消息');
       }
     }
 
-    if (!STATE.rawData || (STATE.rawData.self.length + STATE.rawData.partner.length < 10)) {
-      throw new Error('请先上传聊天数据或输入至少 10 条消息');
+    if (!STATE.rawData || (STATE.rawData.self.length + STATE.rawData.partner.length < 5)) {
+      throw new Error('消息数量不足，请上传至少 5 条聊天记录');
     }
 
     const btn = document.getElementById('generateBtn');
