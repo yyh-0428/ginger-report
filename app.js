@@ -747,6 +747,7 @@ function computeStats() {
     return result;
   }
   const selfEmotion = countEmotion(selfText);
+  const hasPartner = !!partnerStats;
   const partnerEmotion = hasPartner ? countEmotion(partnerMsgs.map(m => m.content)) : null;
 
   STATE.stats = {
