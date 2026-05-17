@@ -875,16 +875,11 @@ function generateReportHTML() {
   const hasDualAI = hasAI && !!p?.partner?.big5;
 
   // Helper: tag pill
-  const tag = (name, isPartner) => `<span style="display:inline-flex;align-items:center;gap:5px;padding:2px 10px 2px 5px;border-radius:20px;font-size:.8em;font-weight:600;color:#fff;background:${isPartner?'#4a7b6f':'#8b5e3c'}">${name.charAt(0)} ${name}</span>`;
-
-  // Helper: section
-  const section = (title, body, extra = '') => `<div style="background:#fdfaf6;border-radius:16px;padding:24px;margin-bottom:14px;box-shadow:0 2px 12px rgba(58,42,26,.05);${extra}">
-    <div style="font-weight:700;font-size:1.05em;color:#3a2a1a;padding-bottom:12px;margin-bottom:16px;border-bottom:1.5px solid #e8d5c0;">${title}</div>${body}</div>`;
+  const tag = (name, isPartner) => `<span class="${isPartner?'tag-partner':'tag-self'}"><span class="tag-av">${name.charAt(0)}</span>${name}</span>`;
 
   // Big5
   let big5HTML = '';
   if (hasDualAI && p.partner.big5) {
-    // Dual Big5 butterfly
     const dims = [
       { key: 'openness', zh: '开放性', en: 'Openness' },
       { key: 'conscientiousness', zh: '尽责性', en: 'Conscientiousness' },
@@ -892,22 +887,41 @@ function generateReportHTML() {
       { key: 'agreeableness', zh: '宜人性', en: 'Agreeableness' },
       { key: 'neuroticism', zh: '神经质', en: 'Neuroticism' },
     ];
-    big5HTML = `<div style="display:grid;grid-template-columns:1fr 100px 1fr;gap:6px;align-items:center;margin-bottom:8px;font-size:.8em;font-weight:600;color:#8a7a6a">
-      <div style="text-align:right">${tag(selfName, false)}</div><div style="text-align:center">维度</div><div>${tag(partnerName, true)}</div></div>`;
-    dims.forEach(d => {
+    big5HTML = `<div class="butterfly-header">
+      <div class="bf-head-left">${tag(selfName, false)}</div>
+      <div style="text-align:center;color:var(--tx-400,#9A8070);font-size:.82em">维度</div>
+      <div class="bf-head-right">${tag(partnerName, true)}</div>
+    </div>`;
+    dims.forEach((d, i) => {
       const si = big5[d.key] || {};
       const pi = p.partner.big5[d.key] || {};
-      big5HTML += `<div style="display:grid;grid-template-columns:1fr 100px 1fr;gap:6px;align-items:center;margin:5px 0">
-        <div style="display:flex;align-items:center;justify-content:flex-end;gap:6px">
-          <span style="font-size:.8em;font-weight:700;color:#8b5e3c">${si.score||0} <span style="font-weight:400;color:#8a7a6a">${si.level||''}</span></span>
-          <div style="width:100px;height:14px;background:#e8d5c0;border-radius:7px 0 0 7px;overflow:hidden"><div style="height:100%;background:linear-gradient(to left,#3a2a1a,#c68642);border-radius:7px 0 0 7px;width:${si.score||0}%"></div></div>
+      big5HTML += `<div class="butterfly-row">
+        <div class="bf-left">
+          <span class="bf-score-left">${si.score||0}<span class="bf-level"> ${si.level||''}</span></span>
+          <div class="bf-track-left"><div class="bf-fill-self" style="width:${si.score||0}%;--bi:${i}"></div></div>
         </div>
-        <div style="text-align:center;font-size:.84em;font-weight:600">${d.zh}<br><small style="font-weight:400;color:#8a7a6a">${d.en}</small></div>
-        <div style="display:flex;align-items:center;gap:6px">
-          <div style="width:100px;height:14px;background:#c4ddd8;border-radius:0 7px 7px 0;overflow:hidden"><div style="height:100%;background:linear-gradient(90deg,#6faa9c,#4a7b6f);border-radius:0 7px 7px 0;width:${pi.score||0}%"></div></div>
-          <span style="font-size:.8em;font-weight:700;color:#4a7b6f">${pi.score||0} <span style="font-weight:400;color:#8a7a6a">${pi.level||''}</span></span>
-        </div></div>`;
+        <div class="bf-center">${d.zh}<br><small>${d.en}</small></div>
+        <div class="bf-right">
+          <div class="bf-track-right"><div class="bf-fill-partner" style="width:${pi.score||0}%;--bi:${i}"></div></div>
+          <span class="bf-score-right">${pi.score||0}<span class="bf-level"> ${pi.level||''}</span></span>
+        </div>
+      </div>`;
     });
+    // Dual notes with evidence
+    const dimKeys = ['openness','conscientiousness','extraversion','agreeableness','neuroticism'];
+    const dimZh = ['开放性','尽责性','外倾性','宜人性','神经质'];
+    let notesHTML = '<div class="dual-notes"><div class="note-col self-note"><div class="note-col-header">' + tag(selfName, false) + ' 解读</div>';
+    dimKeys.forEach((k, i) => {
+      const d = big5[k] || {};
+      notesHTML += `<div class="note-item"><span class="note-dim">${dimZh[i]}</span><span class="note-text">${d.note||''}</span>${d.evidence?`<div class="note-evidence">💬 "${d.evidence}"</div>`:''}</div>`;
+    });
+    notesHTML += '</div><div class="note-col partner-note"><div class="note-col-header">' + tag(partnerName, true) + ' 解读</div>';
+    dimKeys.forEach((k, i) => {
+      const d = p.partner.big5[k] || {};
+      notesHTML += `<div class="note-item"><span class="note-dim">${dimZh[i]}</span><span class="note-text">${d.note||''}</span>${d.evidence?`<div class="note-evidence">💬 "${d.evidence}"</div>`:''}</div>`;
+    });
+    notesHTML += '</div></div>';
+    big5HTML += notesHTML;
   } else if (big5) {
     big5HTML = `<div id="chart-radar" style="width:100%;height:380px;margin-bottom:14px"></div>`;
   }
@@ -920,86 +934,95 @@ function generateReportHTML() {
       let rows = '';
       Object.entries(dims).forEach(([dim, label]) => {
         const d = data.dims?.[dim] || {};
-        rows += `<div style="display:grid;grid-template-columns:64px 24px 44px 1fr;gap:4px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.4);font-size:.8em">
-          <span style="font-weight:600">${label}</span><span style="font-weight:800;color:${isP?'#6faa9c':'#c68642'}">${d.lean||'?'}</span>
-          <span style="color:#8a7a6a;font-size:.85em">${d.strength||''}</span><span style="color:#5a4a3a">${d.reason||''}</span></div>`;
+        rows += `<div class="dim-row">
+          <span class="dim-axis">${label}</span>
+          <span class="dim-lean ${isP?'panel-partner':''}">${d.lean||'?'}</span>
+          <span class="dim-strength">${d.strength||''}</span>
+          <div class="dim-reason">${d.reason||''}</div>
+        </div>`;
       });
-      return `<div style="border-radius:12px;padding:16px;background:${isP?'#ecf5f2':'#f7f2ea'};flex:1">
-        <div style="margin-bottom:8px">${tag(name, isP)}</div>
-        <div style="font-size:2.4rem;font-weight:700;letter-spacing:4px;color:${isP?'#4a7b6f':'#8b5e3c'}">${data.type||'??'}</div>
-        <div style="font-size:.78em;color:#8a7a6a;margin:2px 0">置信度：${data.confidence||''}</div>
-        <div style="font-size:.82em;color:#5a4a3a;font-style:italic;margin:6px 0">${data.note||''}</div>${rows}</div>`;
+      return `<div class="person-panel ${isP?'panel-partner':''}">
+        <div class="panel-header">${tag(name, isP)}</div>
+        <div class="mbti-type-badge ${isP?'panel-partner':''}">${data.type||'??'}</div>
+        <div class="mbti-conf">置信度：${data.confidence||''}</div>
+        <div class="mbti-note">${data.note||''}</div>
+        <div class="dims-list">${rows}</div>
+      </div>`;
     };
-    mbtiHTML = `<div style="display:flex;gap:14px">${mbtiPanel(mbti, selfName, false)}${mbtiPanel(p.partner.mbti, partnerName, true)}</div>`;
+    mbtiHTML = `<div class="dual-col">${mbtiPanel(mbti, selfName, false)}${mbtiPanel(p.partner.mbti, partnerName, true)}</div>`;
   } else if (mbti) {
     const dims = { EI: '内/外向', SN: '感知/直觉', TF: '思考/情感', JP: '判断/感知' };
     let rows = '';
     Object.entries(dims).forEach(([dim, label]) => {
       const d = mbti.dims?.[dim] || {};
-      rows += `<div style="display:grid;grid-template-columns:64px 24px 44px 1fr;gap:4px;padding:5px 0;border-bottom:1px solid rgba(58,42,26,.1);font-size:.8em">
-        <span style="font-weight:600">${label}</span><span style="font-weight:800;color:#c68642">${d.lean||'?'}</span>
-        <span style="color:#8a7a6a;font-size:.85em">${d.strength||''}</span><span style="color:#5a4a3a">${d.reason||''}</span></div>`;
+      rows += `<div class="dim-row">
+        <span class="dim-axis">${label}</span>
+        <span class="dim-lean">${d.lean||'?'}</span>
+        <span class="dim-strength">${d.strength||''}</span>
+        <div class="dim-reason">${d.reason||''}</div>
+      </div>`;
     });
-    mbtiHTML = `<div style="max-width:500px;border-radius:12px;padding:16px;background:#f7f2ea">
-      <div style="font-size:2.4rem;font-weight:700;letter-spacing:4px;color:#8b5e3c">${mbti.type||'??'}</div>
-      <div style="font-size:.78em;color:#8a7a6a;margin:2px 0">置信度：${mbti.confidence||''}</div>
-      <div style="font-size:.82em;color:#5a4a3a;font-style:italic;margin:6px 0">${mbti.note||''}</div>${rows}</div>`;
+    mbtiHTML = `<div class="person-panel" style="max-width:500px">
+      <div class="mbti-type-badge">${mbti.type||'??'}</div>
+      <div class="mbti-conf">置信度：${mbti.confidence||''}</div>
+      <div class="mbti-note">${mbti.note||''}</div>
+      <div class="dims-list">${rows}</div>
+    </div>`;
   }
 
-  // Style
+  // Style summary
   const stylePanel = (data, name, isP) => `
-    <div style="flex:1">
-      <div style="margin-bottom:12px">${tag(name, isP)}</div>
-      <blockquote style="background:${isP?'#ecf5f2':'#f7f2ea'};border-left:4px solid ${isP?'#6faa9c':'#c68642'};padding:12px 16px;border-radius:0 8px 8px 0;font-style:italic;margin-bottom:12px">"${data.one_line||''}"</blockquote>
-      <p style="font-size:.9em;color:#5a4a3a;line-height:1.8;margin-bottom:10px">${data.summary||''}</p>
-      <ul style="padding-left:16px;margin-bottom:10px">${(data.strengths||[]).map(s => `<li style="font-size:.85em;color:#5a4a3a;margin:4px 0">${s}</li>`).join('')}</ul>
-      ${(data.fun_facts||[]).length ? `<div style="font-size:.8em;font-weight:700;color:${isP?'#6faa9c':'#c68642'};margin:10px 0 6px">意外发现</div>${data.fun_facts.map(f => `<div style="background:${isP?'#ecf5f2':'#f7f2ea'};border-left:3px solid ${isP?'#6faa9c':'#d4956a'};padding:8px 12px;border-radius:0 6px 6px 0;font-size:.84em;margin:5px 0">${f}</div>`).join('')}` : ''}
+    <div class="${isP?'partner-col':''}">
+      <div class="panel-header" style="margin-bottom:12px">${tag(name, isP)}</div>
+      <blockquote class="one-line ${isP?'partner':''}">"${data.one_line||''}"</blockquote>
+      <p class="summary-text">${data.summary||''}</p>
+      <ul class="strengths">${(data.strengths||[]).map(s => `<li>${s}</li>`).join('')}</ul>
+      ${(data.fun_facts||[]).length ? `<div class="fun-facts-label">意外发现</div>${data.fun_facts.map(f => `<div class="fun-fact">${f}</div>`).join('')}` : ''}
     </div>`;
 
   let styleHTML = '';
   if (hasDualAI && p.partner.style) {
-    styleHTML = `<div style="display:flex;gap:18px">${stylePanel(style, selfName, false)}${stylePanel(p.partner.style, partnerName, true)}</div>`;
+    styleHTML = `<div class="dual-col">${stylePanel(style, selfName, false)}${stylePanel(p.partner.style, partnerName, true)}</div>`;
   } else if (style) {
     styleHTML = stylePanel(style, selfName, false);
   }
 
   // Charts HTML
   const chartsHTML = `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
-      <div id="chart-hourly" style="height:280px"></div>
-      <div id="chart-weekday" style="height:280px"></div>
-      <div id="chart-monthly" style="height:280px"></div>
-      <div id="chart-length" style="height:280px"></div>
+    <div class="chart-grid">
+      <div id="chart-hourly" class="chart-cell"></div>
+      <div id="chart-weekday" class="chart-cell"></div>
+      <div id="chart-monthly" class="chart-cell"></div>
+      <div id="chart-length" class="chart-cell"></div>
     </div>
-    <div style="display:grid;grid-template-columns:${hasPartner ? '1fr 1fr' : '1fr'};gap:10px;margin-bottom:14px">
-      <div id="chart-wc-self" style="height:320px"></div>
-      ${hasPartner ? '<div id="chart-wc-partner" style="height:320px"></div>' : ''}
+    <div class="chart-grid" style="grid-template-columns:${hasPartner?'1fr 1fr':'1fr'}">
+      <div id="chart-wc-self" class="chart-cell-full"></div>
+      ${hasPartner ? '<div id="chart-wc-partner" class="chart-cell-full"></div>' : ''}
     </div>
     <div id="chart-hm-self" style="height:200px;margin-bottom:10px"></div>
     ${hasPartner ? '<div id="chart-hm-partner" style="height:200px;margin-bottom:10px"></div>' : ''}`;
 
-  // Reliability
   const reliability = p?.self?.reliability || '';
 
   const bodyHTML = `
-<div class="hdr">
+<div class="header" style="--i:0">
   <h1>🍪 微信聊天人格分析报告</h1>
-  <div class="hdr-meta">${new Date().toLocaleDateString('zh-CN',{year:'numeric',month:'long',day:'numeric'})}</div>
-  <div class="hdr-vs">
-    <div class="hdr-pill"><div class="hdr-av av-s">${selfName.charAt(0)}</div><span style="font-size:.85em;font-weight:600">${selfName}</span></div>
-    ${hasPartner ? `<span style="opacity:.35;font-weight:200">VS</span><div class="hdr-pill"><div class="hdr-av av-p">${partnerName.charAt(0)}</div><span style="font-size:.85em;font-weight:600">${partnerName}</span></div>` : ''}
+  <div class="header-meta">${new Date().toLocaleDateString('zh-CN',{year:'numeric',month:'long',day:'numeric'})}</div>
+  <div class="header-vs">
+    <div class="person-pill"><div class="av av-self">${selfName.charAt(0)}</div><span class="pill-name">${selfName}</span></div>
+    ${hasPartner ? `<span class="vs-divider">VS</span><div class="person-pill"><div class="av av-partner">${partnerName.charAt(0)}</div><span class="pill-name">${partnerName}</span></div>` : ''}
   </div>
 </div>
-<div class="stats">
+<div class="stats" style="--i:1">
   <div class="stat"><div class="stat-num">${s.total.toLocaleString()}</div><div class="stat-lbl">${selfName} 发出的消息</div></div>
   <div class="stat"><div class="stat-num">${s.avgLength}</div><div class="stat-lbl">平均消息字数</div></div>
   <div class="stat"><div class="stat-num">${spanStr}</div><div class="stat-lbl">数据覆盖时长</div></div>
 </div>
-${section('📊 消息行为分析', chartsHTML)}
-${big5HTML ? section('🧠 大五人格分析 (Big Five)', big5HTML) : ''}
-${mbtiHTML ? section('🔮 MBTI 推断', mbtiHTML) : ''}
-${styleHTML ? section('✨ AI 对' + (hasDualAI ? '你们' : '你') + '的总结', styleHTML) : ''}
-${reliability ? `<div style="font-size:.78em;color:#8a7a6a;text-align:center;padding:12px">📋 ${reliability}</div>` : ''}
+<div class="section" style="--i:2"><div class="section-title">📊 消息行为分析</div>${chartsHTML}</div>
+${big5HTML ? `<div class="section" style="--i:3"><div class="section-title">🧠 大五人格分析 (Big Five)</div>${big5HTML}</div>` : ''}
+${mbtiHTML ? `<div class="section" style="--i:4"><div class="section-title">🔮 MBTI 推断</div>${mbtiHTML}</div>` : ''}
+${styleHTML ? `<div class="section" style="--i:5"><div class="section-title">✨ AI 对${hasDualAI?'你们':'你'}的总结</div>${styleHTML}</div>` : ''}
+${reliability ? `<div style="font-size:.78em;color:var(--tx-400,#8a7a6a);text-align:center;padding:12px">📋 ${reliability}</div>` : ''}
 <div class="disc">⚠️ 本报告基于语言模式的统计推断，仅供娱乐与自我探索，不构成心理学诊断。<br>MBTI 信效度存在学术争议；Big Five 具有更强的研究支撑，但仍需谨慎解读。<div class="brand">🍪 姜饼探AI · Ginger Report v2.0</div></div>`;
 
   return bodyHTML;
@@ -1007,31 +1030,339 @@ ${reliability ? `<div style="font-size:.78em;color:#8a7a6a;text-align:center;pad
 
 function getFullReportHTML(bodyHTML, selfName, partnerName, hasPartner) {
   const STYLES = `
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'PingFang SC','Hiragino Sans GB','Microsoft YaHei',system-ui,sans-serif;background:#f5f0e8;color:#2d2018;line-height:1.6;padding:20px 16px}
-.c{max-width:880px;margin:0 auto}
-.hdr{background:linear-gradient(135deg,#3a2a1a,#5a3a28);border-radius:20px;padding:36px 28px;color:#fff;text-align:center;position:relative;overflow:hidden;margin-bottom:16px}
-.hdr::after{content:'';position:absolute;inset:0;background:repeating-linear-gradient(-45deg,transparent,transparent 40px,rgba(255,255,255,.03) 40px,rgba(255,255,255,.03) 41px)}
-.hdr h1{font-size:1.6rem;font-weight:700;letter-spacing:.04em;position:relative;z-index:1}
-.hdr-meta{opacity:.5;font-size:.82em;margin-top:6px;position:relative;z-index:1}
-.hdr-vs{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:16px;position:relative;z-index:1}
-.hdr-pill{display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.18);border-radius:50px;padding:4px 14px 4px 4px}
-.hdr-av{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px}
-.av-s{background:linear-gradient(135deg,#8b5e3c,#d4956a);color:#fff}
-.av-p{background:linear-gradient(135deg,#4a7b6f,#6faa9c);color:#fff}
-.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
-.stat{background:#fdfaf6;border-radius:12px;padding:18px 12px 16px;text-align:center;box-shadow:0 2px 8px rgba(58,42,26,.04);position:relative}
-.stat::after{content:'';position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:32px;height:3px;background:linear-gradient(90deg,#c68642,#d4956a);border-radius:2px 2px 0 0}
-.stat-num{font-size:1.5rem;font-weight:700;color:#8b5e3c;font-variant-numeric:tabular-nums}
-.stat-lbl{font-size:.76em;color:#8a7a6a;margin-top:6px}
-.disc{text-align:center;font-size:.74em;color:#8a7a6a;padding:20px 16px;border-top:1.5px solid #e8d5c0;line-height:2}
-.brand{font-weight:700;color:#c68642;margin-top:10px;letter-spacing:.06em}
-@media(max-width:600px){.stats{grid-template-columns:1fr}}`;
+/* ── OKLCH Design Tokens ──────────────────────────── */
+:root {
+  --pg:        oklch(93.5% 0.022 55);
+  --surface:   oklch(98.5% 0.008 52);
+  --surface-2: oklch(96%   0.018 54);
+  --br-900: oklch(32%  0.085 48);
+  --br-700: oklch(44%  0.095 49);
+  --br-500: oklch(58%  0.105 51);
+  --br-300: oklch(74%  0.085 53);
+  --br-100: oklch(91%  0.042 55);
+  --br-050: oklch(96%  0.022 55);
+  --tl-800: oklch(40%  0.075 174);
+  --tl-500: oklch(58%  0.085 175);
+  --tl-200: oklch(83%  0.055 175);
+  --tl-050: oklch(95%  0.028 175);
+  --tx-900: oklch(22%  0.025 48);
+  --tx-600: oklch(46%  0.030 48);
+  --tx-400: oklch(63%  0.022 50);
+  --sh-sm: 0 1px 4px oklch(32% 0.085 48 / .07);
+  --sh-md: 0 4px 18px oklch(32% 0.085 48 / .10);
+  --r-sm: 8px;  --r-md: 14px;  --r-lg: 20px;  --r-xl: 28px;
+  --ease-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ff-display: 'Songti SC', 'STSong', 'SimSun', Georgia, 'Times New Roman', serif;
+  --ff-body:    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui, sans-serif;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+blockquote { quotes: none; }
+body {
+  font-family: var(--ff-body); background: var(--pg); color: var(--tx-900);
+  line-height: 1.6; padding: clamp(14px, 3vw, 32px) clamp(10px, 2.5vw, 20px);
+  min-height: 100vh;
+}
+.container { max-width: 960px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+
+@keyframes fadeUp { from { opacity: 0; transform: translateY(18px); } }
+@keyframes growX { from { transform: scaleX(0); } }
+.header, .stats, .section {
+  animation: fadeUp 560ms var(--ease-expo) both;
+  animation-delay: calc(var(--i, 0) * 65ms);
+}
+.bar-fill, .bf-fill-self, .bf-fill-partner {
+  animation: growX 750ms var(--ease-expo) both;
+  animation-delay: calc(300ms + var(--bi, 0) * 40ms);
+}
+.bf-fill-self    { transform-origin: right center; }
+.bf-fill-partner { transform-origin: left center; }
+.bar-fill        { transform-origin: left center; }
+@media (prefers-reduced-motion: reduce) {
+  .header, .stats, .section, .bar-fill, .bf-fill-self, .bf-fill-partner { animation: none; }
+}
+
+/* Header */
+.header {
+  background: var(--br-900); border-radius: var(--r-xl);
+  padding: clamp(28px, 5vw, 52px) clamp(22px, 4vw, 48px);
+  color: #fff; text-align: center; position: relative; overflow: hidden;
+}
+.header::before {
+  content: ''; position: absolute; inset: 0;
+  background: repeating-linear-gradient(-45deg, transparent, transparent 32px, oklch(100% 0 0 / .022) 32px, oklch(100% 0 0 / .022) 33px);
+  pointer-events: none;
+}
+.header::after {
+  content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 55%;
+  background: linear-gradient(to bottom, transparent, oklch(28% 0.07 48 / .2));
+  pointer-events: none;
+}
+.header h1 {
+  font-family: var(--ff-display); font-size: clamp(1.45rem, 4.5vw, 2.1rem);
+  font-weight: 700; letter-spacing: .04em; margin-bottom: 7px;
+  position: relative; z-index: 1;
+}
+.header-meta { opacity: .58; font-size: .84em; letter-spacing: .03em; position: relative; z-index: 1; }
+.header-vs {
+  display: flex; align-items: center; justify-content: center;
+  gap: 14px; margin-top: 20px; position: relative; z-index: 1;
+}
+.vs-divider { font-size: .9em; opacity: .38; font-weight: 200; letter-spacing: .2em; }
+.person-pill {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: oklch(100% 0 0 / .11); border: 1px solid oklch(100% 0 0 / .18);
+  border-radius: 50px; padding: 5px 15px 5px 5px;
+}
+.av {
+  width: 38px; height: 38px; border-radius: 50%; overflow: hidden; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; font-weight: 700; border: 2px solid oklch(100% 0 0 / .3);
+}
+.av-self    { background: linear-gradient(135deg, var(--br-700), var(--br-300)); color: #fff; }
+.av-partner { background: linear-gradient(135deg, var(--tl-800), var(--tl-500)); color: #fff; }
+.pill-name  { font-size: .88em; font-weight: 600; color: #fff; }
+
+/* Stats */
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.stat {
+  background: var(--surface); border-radius: var(--r-md);
+  padding: 22px 14px 20px; text-align: center;
+  box-shadow: var(--sh-sm); position: relative;
+}
+.stat::after {
+  content: ''; position: absolute; bottom: 0; left: 50%;
+  transform: translateX(-50%); width: 40px; height: 3px;
+  background: linear-gradient(90deg, var(--br-500), var(--br-300));
+  border-radius: 2px 2px 0 0;
+}
+.stat-num {
+  font-family: var(--ff-display); font-size: clamp(1.5rem, 3.5vw, 2.1rem);
+  font-weight: 700; color: var(--br-700); line-height: 1; font-variant-numeric: tabular-nums;
+}
+.stat-lbl { color: var(--tx-400); font-size: .78em; margin-top: 7px; }
+
+/* Section */
+.section {
+  background: var(--surface); border-radius: var(--r-lg);
+  padding: clamp(18px, 3.5vw, 28px); box-shadow: var(--sh-sm);
+}
+.section-title {
+  font-family: var(--ff-display); font-size: 1.02em; font-weight: 700;
+  color: var(--br-900); letter-spacing: .04em;
+  display: flex; align-items: center; gap: 9px;
+  padding-bottom: 14px; margin-bottom: 18px;
+  border-bottom: 1.5px solid var(--br-100);
+}
+
+/* Tags */
+.tag-self, .tag-partner {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 10px 3px 4px; border-radius: 20px;
+  font-size: .79em; font-weight: 600; white-space: nowrap; color: #fff;
+}
+.tag-self    { background: var(--br-700); }
+.tag-partner { background: var(--tl-800); }
+.tag-av {
+  width: 20px; height: 20px; border-radius: 50%; overflow: hidden;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700; flex-shrink: 0;
+  background: oklch(100% 0 0 / .22); color: #fff;
+}
+
+/* Butterfly Big5 */
+.butterfly-header {
+  display: grid; grid-template-columns: 1fr 120px 1fr;
+  gap: 8px; margin-bottom: 8px; font-size: .79em; font-weight: 600; color: var(--tx-400);
+}
+.bf-head-left  { text-align: right; }
+.bf-head-right { text-align: left; }
+.butterfly-row {
+  display: grid; grid-template-columns: 1fr 120px 1fr;
+  gap: 8px; align-items: center; margin: 6px 0;
+}
+.bf-left  { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.bf-right { display: flex; align-items: center; gap: 8px; }
+.bf-track-left {
+  width: 110px; height: 17px; background: var(--br-100);
+  border-radius: 8px 0 0 8px; overflow: hidden; direction: rtl; flex-shrink: 0;
+}
+.bf-track-right {
+  width: 110px; height: 17px; background: var(--tl-200);
+  border-radius: 0 8px 8px 0; overflow: hidden; flex-shrink: 0;
+}
+.bf-fill-self {
+  height: 100%; background: linear-gradient(to left, var(--br-900), var(--br-500));
+  border-radius: 8px 0 0 8px;
+}
+.bf-fill-partner {
+  height: 100%; background: linear-gradient(90deg, var(--tl-500), var(--tl-800));
+  border-radius: 0 8px 8px 0;
+}
+.bf-score-left {
+  font-size: .79em; font-weight: 700; color: var(--br-700);
+  text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.bf-score-right {
+  font-size: .79em; font-weight: 700; color: var(--tl-800);
+  white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.bf-level  { font-weight: 400; color: var(--tx-400); }
+.bf-center { text-align: center; font-size: .84em; font-weight: 600; color: var(--tx-900); line-height: 1.3; }
+.bf-center small { font-weight: 400; color: var(--tx-400); font-size: .78em; }
+
+/* Big5 dual notes */
+.dual-notes {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 18px;
+  margin-top: 22px; padding-top: 18px; border-top: 1.5px solid var(--br-100);
+}
+.note-col-header {
+  font-size: .79em; font-weight: 600; color: var(--br-900);
+  margin-bottom: 9px; display: flex; align-items: center; gap: 7px;
+}
+.note-item {
+  margin-bottom: 9px; padding: 9px 11px;
+  background: var(--br-050); border-radius: var(--r-sm);
+  border-left: 3px solid var(--br-300);
+}
+.partner-note .note-item { background: var(--tl-050); border-left-color: var(--tl-500); }
+.note-dim {
+  display: inline-block; font-size: .73em; font-weight: 700;
+  color: var(--br-700); background: oklch(100% 0 0 / .7);
+  padding: 1px 7px; border-radius: 10px; margin-bottom: 3px;
+}
+.partner-note .note-dim { color: var(--tl-800); }
+.note-text     { font-size: .82em; color: var(--tx-900); display: block; margin-top: 3px; line-height: 1.6; }
+.note-evidence { font-size: .76em; color: var(--tx-400); font-style: italic; margin-top: 4px; }
+
+/* Single Big5 */
+.trait-row { display: flex; gap: 14px; margin: 13px 0; align-items: flex-start; }
+.trait-label { width: 68px; font-weight: 600; font-size: .84em; color: var(--tx-900); flex-shrink: 0; line-height: 1.3; padding-top: 2px; }
+.trait-label small { font-weight: 400; color: var(--tx-400); display: block; }
+.trait-body { flex: 1; }
+.bar-wrap { display: flex; align-items: center; gap: 10px; }
+.bar-track { flex: 1; height: 17px; background: var(--br-100); border-radius: 8px; overflow: hidden; }
+.bar-fill { height: 100%; background: linear-gradient(90deg, var(--br-300), var(--br-900)); border-radius: 8px; }
+.bar-score { font-size: .79em; color: var(--br-700); font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.trait-note     { font-size: .82em; color: var(--tx-600); margin-top: 6px; line-height: 1.65; }
+.trait-evidence { font-size: .76em; color: var(--tx-400); font-style: italic; margin-top: 3px; }
+
+/* MBTI */
+.dual-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.person-panel { border-radius: var(--r-md); padding: 18px; background: var(--br-050); }
+.person-panel.panel-partner { background: var(--tl-050); }
+.panel-header { margin-bottom: 10px; }
+.mbti-type-badge {
+  font-family: var(--ff-display); font-size: clamp(1.8rem, 4vw, 2.7rem);
+  font-weight: 700; letter-spacing: 5px; color: var(--br-700); line-height: 1; margin: 8px 0 4px;
+}
+.mbti-type-badge.panel-partner { color: var(--tl-800); }
+.mbti-conf  { font-size: .77em; color: var(--tx-400); margin-top: 2px; }
+.mbti-note  { font-size: .81em; color: var(--tx-600); margin: 8px 0 10px; font-style: italic; line-height: 1.55; }
+.dim-row {
+  display: grid; grid-template-columns: 74px 26px 48px 1fr;
+  gap: 6px; padding: 6px 0; border-bottom: 1px solid oklch(100% 0 0 / .55);
+  align-items: baseline; font-size: .81em;
+}
+.panel-partner .dim-row { border-bottom-color: oklch(100% 0 0 / .45); }
+.dim-axis     { color: var(--tx-900); font-weight: 600; }
+.dim-lean     { font-weight: 800; color: var(--br-500); }
+.dim-lean.panel-partner { color: var(--tl-800); }
+.dim-strength { color: var(--tx-400); font-size: .84em; }
+.dim-reason   { color: var(--tx-600); line-height: 1.45; }
+
+/* Style Summary */
+.one-line {
+  background: var(--surface-2); border-left: 4px solid var(--br-500);
+  padding: 13px 18px; border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  font-size: .94em; font-style: italic; color: var(--tx-900);
+  margin-bottom: 15px; line-height: 1.7;
+}
+.one-line.partner { border-left-color: var(--tl-500); background: var(--tl-050); }
+.summary-text { font-size: .89em; color: var(--tx-600); line-height: 1.8; margin-bottom: 13px; }
+.strengths    { padding-left: 18px; margin-bottom: 13px; }
+.strengths li { font-size: .87em; color: var(--tx-600); margin: 6px 0; line-height: 1.6; }
+.fun-facts-label { font-size: .82em; font-weight: 700; color: var(--br-500); margin: 13px 0 7px; }
+.partner-col .fun-facts-label { color: var(--tl-800); }
+.fun-fact {
+  background: var(--surface-2); border-left: 3px solid var(--br-300);
+  padding: 10px 14px; border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  font-size: .84em; margin: 7px 0; color: var(--tx-600); line-height: 1.65;
+}
+.partner-col .fun-fact { border-left-color: var(--tl-500); }
+
+/* Heatmap */
+.hm-controls { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.hm-label-sm { font-size: .79em; color: var(--tx-400); }
+.hm-yr-btns  { display: flex; gap: 5px; flex-wrap: wrap; }
+.hm-yr-btn {
+  padding: 4px 13px; border-radius: 20px; border: 1.5px solid var(--br-300);
+  background: transparent; color: var(--br-700);
+  cursor: pointer; font-size: .79em; font-family: inherit;
+  transition: background 150ms, color 150ms, border-color 150ms;
+}
+.hm-yr-btn.hm-active { background: var(--br-700); color: #fff; border-color: var(--br-700); }
+.hm-yr-btn:hover:not(.hm-active) { background: var(--br-100); }
+.hm-person-block { margin-bottom: 18px; }
+.hm-person-label { margin-bottom: 9px; }
+.hm-flex    { display: flex; gap: 4px; }
+.hm-daycol  { display: flex; flex-direction: column; flex-shrink: 0; }
+.hm-month-sp { height: 18px; }
+.hm-daylbl  { height: 14px; width: 18px; font-size: 9px; color: var(--tx-400); line-height: 14px; margin-bottom: 2px; text-align: right; }
+.hm-scroll  { display: flex; gap: 2px; overflow-x: auto; padding-bottom: 6px; scrollbar-width: thin; scrollbar-color: var(--br-300) var(--br-100); }
+.hm-scroll::-webkit-scrollbar       { height: 5px; }
+.hm-scroll::-webkit-scrollbar-track { background: var(--br-100); border-radius: 3px; }
+.hm-scroll::-webkit-scrollbar-thumb { background: var(--br-300); border-radius: 3px; }
+.hm-col     { display: flex; flex-direction: column; }
+.hm-monlbl  { height: 18px; font-size: 9px; color: var(--tx-400); white-space: nowrap; }
+.hm-weekcol { display: flex; flex-direction: column; gap: 2px; }
+.hm-cell    { width: 13px; height: 13px; border-radius: 2px; flex-shrink: 0; transition: opacity 100ms; cursor: default; }
+.hm-cell:hover { opacity: .62; }
+.hm-out     { background: transparent !important; }
+.hm-sep     { border: none; border-top: 1.5px solid var(--br-100); margin: 14px 0; }
+.hm-legend  { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; font-size: .75em; color: var(--tx-400); }
+.hm-leg-row   { display: flex; align-items: center; gap: 5px; }
+.hm-leg-cells { display: flex; gap: 2px; }
+.hm-leg-cell  { width: 11px; height: 11px; border-radius: 2px; }
+.hm-tip {
+  position: fixed; background: var(--tx-900); color: oklch(96% 0.022 55);
+  padding: 6px 12px; border-radius: var(--r-sm); font-size: 11px;
+  pointer-events: none; z-index: 9999; display: none; white-space: nowrap; line-height: 1.5;
+  box-shadow: 0 4px 14px oklch(22% 0.025 48 / .28);
+}
+
+/* Charts */
+.chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.chart-cell { height: 280px; border-radius: var(--r-sm); }
+.chart-cell-full { height: 320px; border-radius: var(--r-sm); }
+
+/* Disclaimer */
+.disc {
+  text-align: center; font-size: .74em; color: var(--tx-400);
+  padding: 26px 22px; border-top: 1.5px solid var(--br-100); line-height: 2;
+}
+.brand {
+  font-family: var(--ff-display); font-weight: 700; color: var(--br-500);
+  margin-top: 12px; font-size: 1em; letter-spacing: .08em;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  .chart-grid       { grid-template-columns: 1fr; }
+  .dual-col         { grid-template-columns: 1fr; }
+  .dual-notes       { grid-template-columns: 1fr; }
+  .stats            { gap: 7px; }
+  .stat-num         { font-size: 1.4rem; }
+  .butterfly-row,
+  .butterfly-header { grid-template-columns: 1fr 80px 1fr; }
+  .bf-track-left,
+  .bf-track-right   { width: 72px; }
+  .mbti-type-badge  { font-size: 1.75rem; letter-spacing: 3px; }
+}`;
   return `<!DOCTYPE html><html lang="zh"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>微信聊天人格分析 · ${selfName}${hasPartner ? ' & ' + partnerName : ''}</title>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"><\/script>
 <script src="https://cdn.jsdelivr.net/npm/echarts-wordcloud@2.1.0/dist/echarts-wordcloud.min.js"><\/script>
-<style>${STYLES}</style></head><body><div class="c">
+<style>${STYLES}</style></head><body><div class="container">
 ${bodyHTML}
 </div></body></html>`;
 }
