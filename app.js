@@ -82,6 +82,12 @@ function updateUploadHint() {
 function handleFile(file) {
   document.getElementById('uploadFileName').textContent = '📎 ' + file.name;
   const ext = file.name.split('.').pop().toLowerCase();
+
+  // Extract partner hint from file name (e.g. "张依婷.json" → "张依婷")
+  // Remove extension and common suffixes like (1), _backup, etc.
+  const baseName = file.name.replace(/\.[^.]+$/, '').replace(/[\s_]*\(\d+\)\s*$/, '').trim();
+  STATE._fileBaseName = baseName || null;
+
   const reader = new FileReader();
   reader.onload = () => {
     const text = reader.result;
@@ -99,7 +105,6 @@ function handleFile(file) {
         parseFn(text);
         const total = STATE.rawData.self.length + STATE.rawData.partner.length;
         if (total >= 5) {
-          // Auto-detect names
           autoDetectNames();
           toast('✅ 文件已加载，共 ' + total + ' 条消息');
           parsed = true;
@@ -211,24 +216,21 @@ function parseCSV(raw) {
       else if (/type|msg_type/.test(cl)) colMap.type = i;
     });
   } else {
-    // No header — try positional guess: timestamp, sender, content
     colMap = { ts: 0, sender: 1, content: 2, isSender: -1 };
   }
 
   if (colMap.content === undefined) {
-    // Fallback: assume last column is content
     const firstLine = parseCSVLine(lines[dataStart]);
     colMap.content = firstLine.length - 1;
   }
 
-  // Validate content column — check first few data rows actually have text
+  // Validate content column
   let validContent = 0;
   for (let i = dataStart; i < Math.min(dataStart + 5, lines.length); i++) {
     const cols = parseCSVLine(lines[i]);
     if (cols[colMap.content] && cols[colMap.content].trim().length > 0) validContent++;
   }
   if (validContent === 0) {
-    // Content column is wrong — try each column to find the one with text
     const firstLine = parseCSVLine(lines[dataStart]);
     for (let c = 0; c < firstLine.length; c++) {
       if (firstLine[c] && firstLine[c].trim().length > 1) {
@@ -238,7 +240,10 @@ function parseCSV(raw) {
     }
   }
 
-  STATE.rawData = { self: [], partner: [] };
+  // Two-pass: first collect all rows, then determine self/partner
+  const allRows = [];
+  const senderNames = new Set();
+  let hasIsSender = false;
 
   for (let i = dataStart; i < lines.length; i++) {
     const cols = parseCSVLine(lines[i]);
@@ -246,38 +251,58 @@ function parseCSV(raw) {
     const content = (cols[colMap.content] || '').trim();
     if (!content) continue;
 
-    let ts, isSelf = null;
-
-    // Time
+    let ts;
     if (colMap.ts !== undefined && cols[colMap.ts]) {
       const v = cols[colMap.ts].trim();
       ts = /^\d+$/.test(v) ? parseInt(v) : new Date(v).getTime() / 1000;
     }
 
-    // is_sender
-    if (colMap.isSender !== undefined) {
-      const v = cols[colMap.isSender].trim();
-      isSelf = v === '1' || v === 'true' || v === '我' || /self|me/i.test(v);
-    } else if (colMap.sender !== undefined) {
-      const senderName = cols[colMap.sender].trim();
-      const selfVal = document.getElementById('selfName').value;
-      isSelf = senderName === '我' || (selfVal && senderName === selfVal);
-    }
-
-    if (isSelf === null) {
-      // No sender info — assign alternating or detect from name
-      isSelf = STATE.rawData.self.length <= STATE.rawData.partner.length;
-    }
-
     if (colMap.type !== undefined) {
       const t = cols[colMap.type].trim();
-      if (t && t !== '1' && t !== 'text') continue; // non-text message
+      if (t && t !== '1' && t !== 'text') continue;
+    }
+
+    let isSenderRaw = null;
+    if (colMap.isSender !== undefined) {
+      const v = cols[colMap.isSender].trim();
+      isSenderRaw = v === '1' || v === 'true' || v === '我' || /self|me/i.test(v);
+      if (isSenderRaw) hasIsSender = true;
     }
 
     const senderName = (colMap.sender !== undefined && cols[colMap.sender]) ? cols[colMap.sender].trim() : '';
-    const msg = { content: cleanMessage(content), ts, senderName };
-    if (isSelf) STATE.rawData.self.push(msg);
-    else STATE.rawData.partner.push(msg);
+    if (senderName) senderNames.add(senderName);
+
+    allRows.push({ content: cleanMessage(content), ts, senderName, isSenderRaw });
+  }
+
+  // Determine self/partner
+  const names = [...senderNames];
+  const fileBaseName = STATE._fileBaseName;
+  let partnerFromFileName = '';
+  if (fileBaseName && names.length >= 2) {
+    const match = names.find(n => fileBaseName.includes(n) || n.includes(fileBaseName));
+    if (match) partnerFromFileName = match;
+  }
+
+  STATE.rawData = { self: [], partner: [] };
+  for (const row of allRows) {
+    let isSelf;
+    if (hasIsSender && row.isSenderRaw !== null) {
+      isSelf = row.isSenderRaw;
+    } else if (partnerFromFileName) {
+      isSelf = row.senderName !== partnerFromFileName;
+    } else if (names.length >= 2) {
+      const selfVal = document.getElementById('selfName').value;
+      isSelf = row.senderName === '我' || (selfVal && row.senderName === selfVal);
+      if (!isSelf && row.senderName !== '我' && !selfVal) {
+        isSelf = STATE.rawData.self.length <= STATE.rawData.partner.length;
+      }
+    } else {
+      isSelf = STATE.rawData.self.length <= STATE.rawData.partner.length;
+    }
+    (isSelf ? STATE.rawData.self : STATE.rawData.partner).push({
+      content: row.content, ts: row.ts, senderName: row.senderName
+    });
   }
 
   if (STATE.rawData.self.length < 2 && STATE.rawData.partner.length < 2) {
@@ -335,14 +360,25 @@ function parseJSON(raw) {
   // Determine self/partner split
   const hasSenderFlag = allMsgs.some(m => m.isSenderRaw === true || m.isSenderRaw === 1);
   const names = Object.keys(nameSet);
+  const fileBaseName = STATE._fileBaseName;
+
+  // Find partner name from file name: "张依婷.json" → partner is "张依婷"
+  let partnerFromFileName = '';
+  if (fileBaseName && names.length >= 2) {
+    // Exact match or contains match
+    const match = names.find(n => fileBaseName.includes(n) || n.includes(fileBaseName));
+    if (match) partnerFromFileName = match;
+  }
 
   STATE.rawData = { self: [], partner: [] };
   for (const msg of allMsgs) {
     let isSelf;
     if (hasSenderFlag) {
       isSelf = msg.isSenderRaw === true || msg.isSenderRaw === 1;
+    } else if (partnerFromFileName) {
+      // File name matches one sender — that's the partner
+      isSelf = msg.senderName !== partnerFromFileName;
     } else if (names.length >= 2) {
-      // Use first name as self, second as partner
       isSelf = msg.senderName === names[0];
     } else {
       isSelf = STATE.rawData.self.length <= STATE.rawData.partner.length;
@@ -358,16 +394,20 @@ function parseJSON(raw) {
 
 function parseTXT(raw) {
   const lines = raw.split(/\r?\n/).filter(l => l.trim());
-  STATE.rawData = { self: [], partner: [] };
 
   // Common patterns: "Name: message", "Name - message", "YYYY-MM-DD HH:MM Name message"
   const patterns = [
-    /^\d{2,4}[-\/]\d{1,2}[-\/]\d{1,2}\s+\d{1,2}:\d{2}(?::\d{2})?\s+(.+?)[：:]\s*(.+)$/,  // 时间 名称: 内容
-    /^\d{2,4}[-\/]\d{1,2}[-\/]\d{1,2}\s+\d{1,2}:\d{2}(?::\d{2})?\s+(.+?)\s+(.+)$/,        // 时间 名称 内容
-    /^(.+?)[：:]\s*(.+)$/,                                                                    // 名称: 内容
-    /^(.+?)\s+-\s+(.+)$/,                                                                     // 名称 - 内容
-    /^(.+?)\s{2,}(.+)$/,                                                                      // 名称  内容（多空格）
+    /^\d{2,4}[-\/]\d{1,2}[-\/]\d{1,2}\s+\d{1,2}:\d{2}(?::\d{2})?\s+(.+?)[：:]\s*(.+)$/,
+    /^\d{2,4}[-\/]\d{1,2}[-\/]\d{1,2}\s+\d{1,2}:\d{2}(?::\d{2})?\s+(.+?)\s+(.+)$/,
+    /^(.+?)[：:]\s*(.+)$/,
+    /^(.+?)\s+-\s+(.+)$/,
+    /^(.+?)\s{2,}(.+)$/,
   ];
+
+  // Two-pass: collect all parsed rows first
+  const allRows = [];
+  const senderNames = new Set();
+  const unmatchedLines = [];
 
   for (const line of lines) {
     let matched = false;
@@ -377,36 +417,65 @@ function parseTXT(raw) {
         const sender = m[1].trim();
         const content = cleanMessage(m[2].trim());
         if (!content) break;
-        const selfVal = document.getElementById('selfName').value;
-        const isSelf = sender === '我' || (selfVal && sender === selfVal);
-        (isSelf ? STATE.rawData.self : STATE.rawData.partner).push({ content, ts: null, senderName: sender });
+        allRows.push({ content, senderName: sender, ts: null });
+        if (sender) senderNames.add(sender);
         matched = true;
         break;
       }
     }
     if (!matched) {
-      // Treat as one person's message, alternating
       const content = cleanMessage(line);
-      if (content) {
-        const isSelf = STATE.rawData.self.length <= STATE.rawData.partner.length;
-        (isSelf ? STATE.rawData.self : STATE.rawData.partner).push({ content, ts: null, senderName: '' });
-      }
+      if (content) unmatchedLines.push(content);
     }
   }
+
+  // Determine self/partner using file name hint
+  const names = [...senderNames];
+  const fileBaseName = STATE._fileBaseName;
+  let partnerFromFileName = '';
+  if (fileBaseName && names.length >= 2) {
+    const match = names.find(n => fileBaseName.includes(n) || n.includes(fileBaseName));
+    if (match) partnerFromFileName = match;
+  }
+
+  STATE.rawData = { self: [], partner: [] };
+
+  for (const row of allRows) {
+    let isSelf;
+    if (partnerFromFileName) {
+      isSelf = row.senderName !== partnerFromFileName;
+    } else {
+      const selfVal = document.getElementById('selfName').value;
+      isSelf = row.senderName === '我' || (selfVal && row.senderName === selfVal);
+      if (!isSelf && row.senderName !== '我' && !selfVal && names.length >= 2) {
+        isSelf = row.senderName === names[0];
+      } else if (!isSelf && names.length < 2) {
+        isSelf = STATE.rawData.self.length <= STATE.rawData.partner.length;
+      }
+    }
+    (isSelf ? STATE.rawData.self : STATE.rawData.partner).push(row);
+  }
+
+  // Unmatched lines go to alternating
+  for (const content of unmatchedLines) {
+    const isSelf = STATE.rawData.self.length <= STATE.rawData.partner.length;
+    (isSelf ? STATE.rawData.self : STATE.rawData.partner).push({ content, ts: null, senderName: '' });
+  }
+
   if (STATE.rawData.self.length < 2 && STATE.rawData.partner.length < 2) {
     throw new Error('TXT 解析失败，请使用"发送者: 内容"格式，每行一条');
   }
 }
 
 function parseMarkdown(raw) {
-  // Extract messages from markdown
   const lines = raw.split(/\r?\n/);
-  STATE.rawData = { self: [], partner: [] };
 
-  // Pattern: "**Name**: message" or "- **Name**: message"
   const mdPattern = /^\s*(?:[-*]\s+)?(?:\*\*|__)?(.+?)(?:\*\*|__)?[：:]\s*(.+)$/;
-  // Pattern for quoted chats
   const quotePattern = /^>\s*(.+?)[：:]\s*(.+)$/;
+
+  // Two-pass: collect all parsed rows first
+  const allRows = [];
+  const senderNames = new Set();
 
   for (const line of lines) {
     let m = line.match(mdPattern) || line.match(quotePattern);
@@ -414,11 +483,37 @@ function parseMarkdown(raw) {
       const sender = m[1].trim();
       const content = cleanMessage(m[2].trim());
       if (!content) continue;
-      const selfVal = document.getElementById('selfName').value;
-      const isSelf = sender === '我' || (selfVal && sender === selfVal);
-      (isSelf ? STATE.rawData.self : STATE.rawData.partner).push({ content, ts: null, senderName: sender });
+      allRows.push({ content, senderName: sender, ts: null });
+      if (sender) senderNames.add(sender);
     }
   }
+
+  // Determine self/partner using file name hint
+  const names = [...senderNames];
+  const fileBaseName = STATE._fileBaseName;
+  let partnerFromFileName = '';
+  if (fileBaseName && names.length >= 2) {
+    const match = names.find(n => fileBaseName.includes(n) || n.includes(fileBaseName));
+    if (match) partnerFromFileName = match;
+  }
+
+  STATE.rawData = { self: [], partner: [] };
+  for (const row of allRows) {
+    let isSelf;
+    if (partnerFromFileName) {
+      isSelf = row.senderName !== partnerFromFileName;
+    } else {
+      const selfVal = document.getElementById('selfName').value;
+      isSelf = row.senderName === '我' || (selfVal && row.senderName === selfVal);
+      if (!isSelf && row.senderName !== '我' && !selfVal && names.length >= 2) {
+        isSelf = row.senderName === names[0];
+      } else if (!isSelf && names.length < 2) {
+        isSelf = STATE.rawData.self.length <= STATE.rawData.partner.length;
+      }
+    }
+    (isSelf ? STATE.rawData.self : STATE.rawData.partner).push(row);
+  }
+
   if (STATE.rawData.self.length < 2 && STATE.rawData.partner.length < 2) {
     throw new Error('Markdown 解析失败，请确认格式为"**名称**: 内容"');
   }
