@@ -10,12 +10,36 @@ const STATE = {
 
 // ── 中文停用词 ────────────────────────────────────────
 const STOPWORDS = new Set([
-  // 对齐 Python jieba 版本的停用词（仅保留虚词/功能词）
+  // 虚词 / 功能词
   '的','了','是','在','我','你','他','她','它','们','这','那','就','都','和','与',
   '但','也','很','有','没','不','一','个','上','对','说','好','要','么','啊','呢',
   '吧','哦','嗯','然后','所以','因为','如果','可以','还是','已经','什么','怎么',
   '为什么','就是','还有','其实','感觉','觉得','现在','时候','一个','这个','那个',
-  '一下','一起','一直','一样','一点','一些',
+  '一下','一起','一直','一样','一点','一些','知道','真的','看到','会','能','去',
+  '来','还','被','让','给','把','做','用','想','看','应该','之后','之前','不过',
+  '而且','但是','虽然','可是','好像','非常','比较','有点','挺','太','特别','最近',
+  '上次','今天','明天','昨天','的话','可能','需要','自己','比较','可能','应该',
+  '或者','以及','关于','通过','进行','开始','结束','这样','那样','怎样','多少',
+  '哪里','哪个','哪些','谁','几','每','各','任何','某些','所有','全部','其他',
+  '别的','另','再','又','也','才','刚','将','正','曾','已经','终于','始终','永远',
+  // 聊天高频无意义词
+  '嗯嗯','哈哈','哈哈哈','嘿嘿','呵呵','嘻嘻','哎呀','哎哟','天哪','哇塞',
+  '嗯哼','呃','额','噢','喔','哇','呀','啦','嘛','呐','哎','唉','嘻','嘿',
+  '好的','好吧','行','行吧','ok','OK','okay','Yes','No','no','yes',
+  '谢谢','感谢','抱歉','不好意思','对不起','没事','没关系','客气',
+  '请问','麻烦','帮忙','帮','拜托','打扰',
+  // 称呼 / 代词
+  '人家','咱们','大家','各位','亲','宝贝','亲爱的','哥哥','姐姐','弟弟','妹妹',
+  '先生','女士','老师','同学','朋友','兄弟','姐妹',
+  // 时间 / 量词
+  '分钟','小时','天','周','月','年','秒','次','回','遍','趟','下',
+  '块钱','元','角','分','万','亿','千','百','十',
+  '个','位','条','件','样','种','类','些','点','片','块','道','张','本','台','部',
+  // 标点 / 符号
+  '…','——','——','【','】','「','」','『','』','（','）','《','》',
+  // 常见无意义短语
+  '是不是','有没有','能不能','会不会','可不可以','要不要','对不对','好不好',
+  '怎么说','怎么办','什么时候','什么地方','什么东西','为什么呢',
 ]);
 
 // ── UI 交互 ──────────────────────────────────────────
@@ -587,8 +611,8 @@ function segmentChinese(text) {
 function computeStats() {
   if (!STATE.rawData) throw new Error('请先上传聊天数据');
 
-  const selfMsgs = STATE.rawData.self || [];
-  const partnerMsgs = STATE.rawData.partner || [];
+  const selfMsgs = STATE.rawData.self;
+  const partnerMsgs = STATE.rawData.partner;
   const allRaw = [...selfMsgs, ...partnerMsgs];
 
   if (selfMsgs.length < 5) throw new Error('自己消息数量不足（需要至少 5 条）');
@@ -723,7 +747,6 @@ function computeStats() {
     return result;
   }
   const selfEmotion = countEmotion(selfText);
-  const hasPartner = !!partnerStats;
   const partnerEmotion = hasPartner ? countEmotion(partnerMsgs.map(m => m.content)) : null;
 
   STATE.stats = {
@@ -743,7 +766,6 @@ function computeStats() {
 // ── 图表生成 (ECharts) ──────────────────────────────
 
 function createCharts(containerId) {
-  if (!STATE.stats) return;
   // Dispose old chart instances and clean up year switchers
   Object.values(STATE.charts).forEach(c => { try { c.dispose(); } catch {} });
   STATE.charts = {};
@@ -858,79 +880,56 @@ function createCharts(containerId) {
   }
 
   // Word cloud — combined self + partner
-  function chartWordCloud() {
+  function chartWordCloud(elId) {
+    const el = container.querySelector('#' + elId);
+    if (!el) return;
+    const chart = echarts.init(el);
     const selfName = document.getElementById('selfName').value || '我';
     const partnerName = document.getElementById('partnerName').value || '对方';
-    const hasPartner = STATE.stats.hasPartner && STATE.stats.partner;
 
     function filterWords(wordFreq, max) {
       return Object.entries(wordFreq)
         .filter(([w, v]) => {
+          if (v < 2) return false;
           if (w.length < 2) return false;
           if (STOPWORDS.has(w)) return false;
+          if (/^\[.+\]$/.test(w)) return false;
+          if (/^(以上|以下是|系统|消息|图片|语音|视频|文件|链接|撤回|表情包)/.test(w)) return false;
+          if (/^\d+$/.test(w)) return false;
+          if (/^(哈|嘿|嗯|呃|额|噢|喔|哇|呀|啦|嘛|呐|哎|唉|嘻|呵)+$/.test(w)) return false;
           return true;
         })
         .slice(0, max)
         .map(([name, value]) => ({ name, value: Math.log(value + 1) * 10 }));
     }
 
+    const selfWords = filterWords(s.wordFreq, 40);
+    const partnerWords = STATE.stats.hasPartner && STATE.stats.partner
+      ? filterWords(STATE.stats.partner.wordFreq, 40) : [];
+
+    // Merge: self words in brown, partner words in teal
     const BROWN = ['#8b5e3c','#c68642','#d4956a','#e8c49a'];
     const TEAL  = ['#4a7b6f','#6faa9c','#8abfb8','#b4d8d2'];
+    const data = [
+      ...selfWords.map(w => ({ ...w, textStyle: { color: BROWN[Math.floor(Math.random()*BROWN.length)] } })),
+      ...partnerWords.map(w => ({ ...w, textStyle: { color: TEAL[Math.floor(Math.random()*TEAL.length)] } })),
+    ];
+    if (data.length === 0) return;
 
-    // Self word cloud
-    const selfEl = container.querySelector('#chart-wc-self');
-    if (selfEl) {
-      const selfChart = echarts.init(selfEl);
-      const selfWords = filterWords(s.wordFreq, 50);
-      if (selfWords.length > 0) {
-        selfChart.setOption({
-          title: { text: selfName + ' 的高频词', left: 'center', top: 4, textStyle: { fontSize: 13, fontWeight: 'bold', color: '#3a2a1a' } },
-          tooltip: { show: true },
-          series: [{
-            type: 'wordCloud',
-            shape: 'circle',
-            sizeRange: [12, 52],
-            rotationRange: [-45, 45],
-            gridSize: 6,
-            drawOutOfBound: false,
-            textStyle: { fontFamily: 'PingFang SC, Microsoft YaHei, sans-serif', fontWeight: 'normal' },
-            color: function() { return BROWN[Math.floor(Math.random() * BROWN.length)]; },
-            data: selfWords
-          }]
-        });
-        STATE.charts['wc-self'] = selfChart;
-      }
-    }
-
-    // Partner word cloud
-    if (hasPartner) {
-      const partnerEl = container.querySelector('#chart-wc-partner');
-      if (partnerEl) {
-        const partnerChart = echarts.init(partnerEl);
-        const partnerWords = filterWords(STATE.stats.partner.wordFreq, 50);
-        if (partnerWords.length > 0) {
-          partnerChart.setOption({
-            title: { text: partnerName + ' 的高频词', left: 'center', top: 4, textStyle: { fontSize: 13, fontWeight: 'bold', color: '#3a2a1a' } },
-            tooltip: { show: true },
-            series: [{
-              type: 'wordCloud',
-              shape: 'circle',
-              sizeRange: [12, 52],
-              rotationRange: [-45, 45],
-              gridSize: 6,
-              drawOutOfBound: false,
-              textStyle: { fontFamily: 'PingFang SC, Microsoft YaHei, sans-serif', fontWeight: 'normal' },
-              color: function() { return TEAL[Math.floor(Math.random() * TEAL.length)]; },
-              data: partnerWords
-            }]
-          });
-          STATE.charts['wc-partner'] = partnerChart;
-        }
-      }
-    } else {
-      const partnerEl = container.querySelector('#chart-wc-partner');
-      if (partnerEl) partnerEl.style.display = 'none';
-    }
+    chart.setOption({
+      tooltip: { show: true },
+      series: [{
+        type: 'wordCloud',
+        shape: 'circle',
+        sizeRange: [14, 60],
+        rotationRange: [-45, 45],
+        gridSize: 8,
+        drawOutOfBound: false,
+        textStyle: { fontFamily: 'PingFang SC, Microsoft YaHei, sans-serif', fontWeight: 'normal' },
+        data
+      }]
+    });
+    STATE.charts[elId] = chart;
   }
 
   // Big5 radar
@@ -1125,7 +1124,7 @@ function createCharts(containerId) {
   chartWeekday();
   chartLengthDist();
 
-  chartWordCloud();
+  chartWordCloud('chart-wc');
 
   // Custom HTML/CSS heatmap (GitHub-style calendar grid)
   if (window._initHeatmap && Object.keys(s.daily).length > 0) {
@@ -1337,12 +1336,11 @@ ${samples.map(m => '• ' + m.content).join('\n')}
 // ── 报告生成 ──────────────────────────────────────────
 
 function generateReportHTML() {
-  if (!STATE.stats) throw new Error('统计数据未初始化，请重新生成报告');
   const s = STATE.stats.self;
   const p = STATE.personality;
   const selfName = document.getElementById('selfName').value || '我';
   const partnerName = document.getElementById('partnerName').value || '对方';
-  const hasPartner = !!(STATE.stats.hasPartner && STATE.stats.partner);
+  const hasPartner = STATE.stats.hasPartner && STATE.stats.partner;
 
   const dr = s.timeRange;
   const days = dr ? Math.max(1, Math.round((dr.end - dr.start) / (1000*60*60*24))) : 0;
@@ -1550,7 +1548,7 @@ function generateReportHTML() {
   <div class="stat"><div class="stat-num">${spanStr}</div><div class="stat-lbl">数据覆盖时长</div></div>
 </div>
 <div class="section" style="--i:2"><div class="section-title">📊 消息行为分析</div>${chartsHTML}</div>
-<div class="section" style="--i:3"><div class="section-title">💬 高频词对比</div><div class="chart-grid"><div id="chart-wc-self" class="chart-cell"></div><div id="chart-wc-partner" class="chart-cell"></div></div></div>
+<div class="section" style="--i:3"><div class="section-title">💬 高频词对比</div><div id="chart-wc" style="height:360px"></div></div>
 <div class="section" style="--i:4"><div class="section-title">📅 聊天频率热力图</div>${heatmapHTML}</div>
 <div class="section" style="--i:5"><div class="section-title">⚡ 回复速度分析</div>${replyHTML}</div>
 <div class="section" style="--i:6"><div class="section-title">😊 情绪关键词</div>${emotionSection}</div>
@@ -2022,10 +2020,10 @@ function updateProgress(pct, text) {
 
 function downloadReport() {
   const reportBody = document.getElementById('reportContent').innerHTML;
-  if (!reportBody || !STATE.stats) return;
+  if (!reportBody) return;
   const selfName = document.getElementById('selfName').value || '我';
   const partnerName = document.getElementById('partnerName').value || '对方';
-  const hasPartner = !!(STATE.stats.hasPartner && STATE.stats.partner);
+  const hasPartner = STATE.stats.hasPartner && STATE.stats.partner;
   const html = getFullReportHTML(reportBody, selfName, partnerName, hasPartner);
   const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
   const url = URL.createObjectURL(blob);
