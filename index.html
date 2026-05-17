@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🍪 微信聊天分析报告 · 一键生成</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/echarts-wordcloud@2.1.0/dist/echarts-wordcloud.min.js"></script>
+<style>
+:root {
+  --pg: #f5f0e8; --surface: #fdfaf6; --surface2: #f7f2ea;
+  --br900: #3a2a1a; --br700: #8b5e3c; --br500: #c68642; --br300: #d4956a; --br100: #e8d5c0;
+  --tl800: #4a7b6f; --tl500: #6faa9c; --tl200: #c4ddd8; --tl050: #ecf5f2;
+  --tx900: #2d2018; --tx600: #5a4a3a; --tx400: #8a7a6a;
+  --r: 12px; --r2: 16px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'PingFang SC','Hiragino Sans GB','Microsoft YaHei',system-ui,sans-serif;
+  background: var(--pg); color: var(--tx900); line-height: 1.6;
+  min-height: 100vh;
+}
+.container { max-width: 800px; margin: 0 auto; padding: 32px 20px; }
+
+/* Header */
+.header {
+  background: linear-gradient(135deg, var(--br900) 0%, #5a3a28 100%);
+  border-radius: 24px; padding: 40px 32px;
+  color: #fff; text-align: center; position: relative;
+  overflow: hidden; margin-bottom: 20px;
+}
+.header::after {
+  content: ''; position: absolute; inset: 0;
+  background: repeating-linear-gradient(-45deg, transparent, transparent 40px, rgba(255,255,255,.03) 40px, rgba(255,255,255,.03) 41px);
+}
+.header h1 { font-size: 1.8rem; font-weight: 700; letter-spacing: .04em; position: relative; z-index: 1; }
+.header p { opacity: .55; font-size: .88em; margin-top: 8px; position: relative; z-index: 1; }
+
+/* Card */
+.card {
+  background: var(--surface); border-radius: var(--r2);
+  padding: 28px; margin-bottom: 16px;
+  box-shadow: 0 2px 12px rgba(58,42,26,.06);
+}
+.card-title {
+  font-weight: 700; font-size: 1.05em; color: var(--br900);
+  display: flex; align-items: center; gap: 8px;
+  padding-bottom: 14px; margin-bottom: 18px;
+  border-bottom: 1.5px solid var(--br100);
+}
+
+/* Input modes tabs */
+.tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 18px; }
+.tab {
+  padding: 7px 16px; border-radius: 20px; border: 1.5px solid var(--br100);
+  background: transparent; cursor: pointer; font-size: .82em;
+  color: var(--tx600); transition: all .2s; font-family: inherit;
+}
+.tab:hover { border-color: var(--br300); color: var(--br700); }
+.tab.active { background: var(--br700); color: #fff; border-color: var(--br700); }
+
+/* Upload zone */
+.upload-zone {
+  border: 2px dashed var(--br100); border-radius: var(--r);
+  padding: 40px 20px; text-align: center; cursor: pointer;
+  transition: all .2s; background: var(--surface2);
+}
+.upload-zone:hover, .upload-zone.drag-over { border-color: var(--br500); background: #fdf3e8; }
+.upload-icon { font-size: 2.5rem; margin-bottom: 10px; }
+.upload-text { color: var(--br700); font-weight: 600; font-size: .95em; }
+.upload-hint { color: var(--tx400); font-size: .78em; margin-top: 6px; }
+.upload-file { margin-top: 12px; color: var(--tl800); font-size: .85em; font-weight: 600; }
+
+/* Form fields */
+.form-row { display: flex; gap: 14px; margin-bottom: 14px; }
+.form-group { flex: 1; }
+.form-group label { display: block; font-size: .82em; color: var(--tx600); margin-bottom: 5px; font-weight: 600; }
+.form-group input, .form-group textarea, .form-group select {
+  width: 100%; padding: 10px 14px; border: 1.5px solid var(--br100);
+  border-radius: var(--r); font-size: .9em; font-family: inherit;
+  background: var(--surface2); color: var(--tx900); transition: border .2s;
+}
+.form-group input:focus, .form-group textarea:focus, .form-group select:focus {
+  outline: none; border-color: var(--br500);
+}
+.form-group textarea { min-height: 120px; resize: vertical; }
+
+/* AI config collapsible */
+.ai-toggle {
+  display: flex; align-items: center; gap: 8px; cursor: pointer;
+  font-size: .85em; color: var(--br700); font-weight: 600;
+  margin-bottom: 12px; user-select: none;
+}
+.ai-toggle input { display: none; }
+.ai-toggle .switch {
+  width: 42px; height: 24px; background: var(--br100); border-radius: 12px;
+  position: relative; transition: background .2s;
+}
+.ai-toggle .switch::after {
+  content: ''; position: absolute; width: 20px; height: 20px; background: #fff;
+  border-radius: 50%; top: 2px; left: 2px; transition: transform .2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,.15);
+}
+.ai-toggle input:checked + .switch { background: var(--br700); }
+.ai-toggle input:checked + .switch::after { transform: translateX(18px); }
+
+.ai-config { display: none; padding: 16px; background: var(--surface2); border-radius: var(--r); margin-bottom: 12px; }
+.ai-config.show { display: block; }
+
+/* Button */
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 14px 36px; border: none; border-radius: 50px;
+  font-size: 1rem; font-weight: 700; font-family: inherit;
+  cursor: pointer; transition: all .25s;
+  background: linear-gradient(135deg, var(--br700), var(--br500));
+  color: #fff; letter-spacing: .03em;
+  box-shadow: 0 4px 16px rgba(139,94,60,.25);
+}
+.btn:hover { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(139,94,60,.35); }
+.btn:active { transform: translateY(0); }
+.btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+.btn-secondary { background: transparent; color: var(--br700); border: 2px solid var(--br300); box-shadow: none; }
+.btn-secondary:hover { background: var(--br100); }
+.btn-center { display: flex; justify-content: center; margin-top: 8px; }
+
+/* Progress */
+.progress-wrap { display: none; margin: 20px 0; }
+.progress-wrap.show { display: block; }
+.progress-bar {
+  height: 6px; background: var(--br100); border-radius: 3px; overflow: hidden; margin-bottom: 8px;
+}
+.progress-fill {
+  height: 100%; background: linear-gradient(90deg, var(--br500), var(--br700));
+  border-radius: 3px; width: 0%; transition: width .4s ease;
+}
+.progress-text { font-size: .82em; color: var(--tx600); }
+
+/* Report container */
+.report-wrap { display: none; }
+.report-wrap.show { display: block; }
+.report-actions {
+  display: flex; gap: 10px; justify-content: center;
+  padding: 20px; flex-wrap: wrap;
+}
+
+/* Manual input helper */
+.manual-hint { font-size: .78em; color: var(--tx400); margin-top: 6px; }
+.msg-entry { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
+.msg-entry select { padding: 6px 10px; border-radius: 8px; border: 1.5px solid var(--br100); background: var(--surface2); font-size: .85em; }
+.msg-entry input { flex: 1; padding: 8px 12px; border-radius: 8px; border: 1.5px solid var(--br100); background: var(--surface2); font-size: .85em; }
+.msg-entry button { padding: 6px 12px; border: none; border-radius: 8px; background: var(--br100); cursor: pointer; font-size: .85em; color: var(--br700); }
+
+/* Toast */
+.toast {
+  position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+  background: var(--br900); color: #fff; padding: 12px 24px;
+  border-radius: 50px; font-size: .9em; z-index: 999;
+  opacity: 0; transition: opacity .3s;
+  box-shadow: 0 4px 20px rgba(0,0,0,.2);
+}
+.toast.show { opacity: 1; }
+
+@media (max-width: 600px) {
+  .container { padding: 16px 12px; }
+  .header { padding: 28px 20px; }
+  .header h1 { font-size: 1.4rem; }
+  .card { padding: 20px; }
+  .form-row { flex-direction: column; gap: 10px; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>🍪 微信聊天分析报告</h1>
+    <p>上传聊天记录 → 一键生成精美人格分析报告</p>
+  </div>
+
+  <!-- Input Section -->
+  <div class="card" id="inputCard">
+    <div class="card-title">📂 输入聊天数据</div>
+
+    <div class="tabs" id="inputTabs">
+      <button class="tab active" data-mode="csv">📊 CSV</button>
+      <button class="tab" data-mode="json">📋 JSON</button>
+      <button class="tab" data-mode="txt">📝 TXT</button>
+      <button class="tab" data-mode="md">📑 Markdown</button>
+      <button class="tab" data-mode="manual">✍️ 手动输入</button>
+    </div>
+
+    <div id="uploadPanel">
+      <div class="upload-zone" id="uploadZone">
+        <div class="upload-icon">📁</div>
+        <div class="upload-text">点击上传或拖拽文件到此处</div>
+        <div class="upload-hint" id="uploadHint">支持 CSV / JSON / TXT / Markdown 格式</div>
+        <div class="upload-file" id="uploadFileName"></div>
+      </div>
+      <input type="file" id="fileInput" style="display:none" accept=".csv,.json,.txt,.md,.markdown">
+    </div>
+
+    <div id="manualPanel" style="display:none">
+      <div id="msgEntries"></div>
+      <button class="btn btn-secondary" style="margin-top:10px;padding:8px 20px;font-size:.85em" onclick="addMsgEntry()">+ 添加消息</button>
+      <div class="manual-hint">每条消息选择一个发送者（自己/对方），输入消息内容。至少需要 50 条消息才能进行有意义的分析。</div>
+    </div>
+
+    <div style="margin-top:18px">
+      <div class="form-row">
+        <div class="form-group">
+          <label>🙋 你的名字</label>
+          <input type="text" id="selfName" placeholder="例如：小明" value="我">
+        </div>
+        <div class="form-group">
+          <label>💬 对方的名字</label>
+          <input type="text" id="partnerName" placeholder="例如：小红" value="对方">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI Config -->
+  <div class="card">
+    <div class="card-title">🤖 AI 人格分析（可选）</div>
+    <label class="ai-toggle">
+      <input type="checkbox" id="aiEnabled" onchange="toggleAI()">
+      <span class="switch"></span>
+      启用 AI 人格分析（需要 API Key）
+    </label>
+    <div class="ai-config" id="aiConfig">
+      <div class="form-row">
+        <div class="form-group">
+          <label>API 端点</label>
+          <input type="text" id="apiEndpoint" value="https://api.openai.com/v1/chat/completions" placeholder="https://api.openai.com/v1/chat/completions">
+        </div>
+        <div class="form-group">
+          <label>模型名称</label>
+          <input type="text" id="apiModel" value="gpt-4o" placeholder="gpt-4o / deepseek-chat / claude-3-opus">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>API Key</label>
+        <input type="password" id="apiKey" placeholder="sk-...">
+      </div>
+      <div class="manual-hint">
+        支持所有 OpenAI 兼容接口：OpenAI / DeepSeek / 智谱 / 通义千问 / Moonshot / Claude API 等。
+        API Key 仅保存在浏览器本地，不会上传到任何服务器。
+      </div>
+    </div>
+  </div>
+
+  <!-- Generate Button -->
+  <div class="btn-center">
+    <button class="btn" id="generateBtn" onclick="generateReport()">🍪 一键生成报告</button>
+  </div>
+
+  <!-- Progress -->
+  <div class="progress-wrap" id="progressWrap">
+    <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+    <div class="progress-text" id="progressText">准备中...</div>
+  </div>
+
+  <!-- Report Area -->
+  <div class="report-wrap" id="reportWrap">
+    <div class="report-actions">
+      <button class="btn btn-secondary" onclick="downloadReport()">💾 下载 HTML 报告</button>
+      <button class="btn btn-secondary" onclick="scrollToTop()">⬆ 回到顶部</button>
+    </div>
+    <div class="card" id="reportContent"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
