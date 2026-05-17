@@ -429,6 +429,10 @@ function computeStats() {
 // ── 图表生成 (ECharts) ──────────────────────────────
 
 function createCharts(containerId) {
+  // Dispose old chart instances before replacing
+  Object.values(STATE.charts).forEach(c => { try { c.dispose(); } catch {} });
+  STATE.charts = {};
+
   const s = STATE.stats.self;
   const container = document.getElementById(containerId);
   const theme = { textColor: '#5a4a3a', accent: '#c68642', brown: '#8b5e3c', teal: '#6faa9c' };
@@ -855,20 +859,6 @@ function generateReportHTML() {
     });
   } else if (big5) {
     big5HTML = `<div id="chart-radar" style="width:100%;height:380px;margin-bottom:14px"></div>`;
-    const dims = ['openness','conscientiousness','extraversion','agreeableness','neuroticism'];
-    const labels = ['开放性','尽责性','外倾性','宜人性','神经质'];
-    dims.forEach((d, i) => {
-      const item = big5[d] || {};
-      big5HTML += `<div style="display:flex;gap:12px;margin:10px 0">
-        <div style="width:64px;font-weight:600;font-size:.84em">${labels[i]}</div>
-        <div style="flex:1"><div style="display:flex;align-items:center;gap:8px">
-          <div style="flex:1;height:14px;background:#e8d5c0;border-radius:7px;overflow:hidden"><div style="height:100%;background:linear-gradient(90deg,#d4956a,#3a2a1a);border-radius:7px;width:${item.score||0}%"></div></div>
-          <span style="font-size:.8em;font-weight:700;color:#8b5e3c">${item.score||0} · ${item.level||''}</span>
-        </div>
-        <div style="font-size:.82em;color:#5a4a3a;margin-top:5px">${item.note||''}</div>
-        ${item.evidence ? `<div style="font-size:.76em;color:#8a7a6a;font-style:italic;margin-top:3px">💬 "${item.evidence}"</div>` : ''}
-        </div></div>`;
-    });
   }
 
   // MBTI
