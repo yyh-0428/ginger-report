@@ -120,7 +120,14 @@ function autoDetectNames() {
   const partnerField = document.getElementById('partnerName');
   const hint = document.getElementById('nameHint');
 
-  // Collect names from parsed data
+  // Collect all unique names from both sides
+  const allNames = {};
+  [...STATE.rawData.self, ...STATE.rawData.partner].forEach(m => {
+    if (m.senderName) allNames[m.senderName] = (allNames[m.senderName] || 0) + 1;
+  });
+  const names = Object.entries(allNames).sort((a, b) => b[1] - a[1]);
+
+  // Collect names per side
   const selfNames = {};
   const partnerNames = {};
   STATE.rawData.self.forEach(m => { if (m.senderName) selfNames[m.senderName] = (selfNames[m.senderName] || 0) + 1; });
@@ -129,18 +136,31 @@ function autoDetectNames() {
   const topSelf = Object.entries(selfNames).sort((a, b) => b[1] - a[1])[0];
   const topPartner = Object.entries(partnerNames).sort((a, b) => b[1] - a[1])[0];
 
-  if (topSelf) {
-    selfField.value = topSelf[0];
-    STATE.detectedNames = { self: topSelf[0] };
+  // Determine names: prefer top from each side, fallback to overall top 2
+  let selfName = topSelf?.[0] || '';
+  let partnerName = topPartner?.[0] || '';
+
+  // If both sides have the same name (bad split), use overall top 2
+  if (selfName && selfName === partnerName && names.length >= 2) {
+    selfName = names[0][0];
+    partnerName = names[1][0];
   }
-  if (topPartner) {
-    partnerField.value = topPartner[0];
-    STATE.detectedNames = { ...(STATE.detectedNames || {}), partner: topPartner[0] };
+  // If one side is empty, use overall top 2
+  if (!selfName && names.length >= 1) selfName = names[0][0];
+  if (!partnerName && names.length >= 2) partnerName = names[1][0];
+
+  if (selfName) {
+    selfField.value = selfName;
+    STATE.detectedNames = { self: selfName };
+  }
+  if (partnerName) {
+    partnerField.value = partnerName;
+    STATE.detectedNames = { ...(STATE.detectedNames || {}), partner: partnerName };
   }
 
-  if (topSelf || topPartner) {
-    const names = [topSelf?.[0], topPartner?.[0]].filter(Boolean).join(' & ');
-    hint.textContent = '✅ 已自动识别：' + names;
+  if (selfName || partnerName) {
+    const display = [selfName, partnerName].filter(Boolean).join(' & ');
+    hint.textContent = '✅ 已自动识别：' + display;
     hint.style.color = '#4a7b6f';
   }
 }
@@ -593,20 +613,57 @@ function computeStats() {
   // Sort word freq
   const topWordsSelf = Object.entries(selfWordFreq).sort((a, b) => b[1] - a[1]).slice(0, 100);
 
+  // ── Reply speed analysis ──
+  const allMsgs = [...selfMsgs.map(m => ({...m, who:'self'})), ...partnerMsgs.map(m => ({...m, who:'partner'}))]
+    .filter(m => m.ts).sort((a, b) => a.ts - b.ts);
+  const selfReplyTimes = [];  // time (sec) for self to reply to partner
+  const partnerReplyTimes = [];
+  for (let i = 1; i < allMsgs.length; i++) {
+    const gap = allMsgs[i].ts - allMsgs[i-1].ts;
+    if (gap > 0 && gap < 3600 * 24) { // within 24h
+      if (allMsgs[i].who === 'self' && allMsgs[i-1].who === 'partner') selfReplyTimes.push(gap);
+      if (allMsgs[i].who === 'partner' && allMsgs[i-1].who === 'self') partnerReplyTimes.push(gap);
+    }
+  }
+  const avgReply = arr => arr.length ? Math.round(arr.reduce((a,b)=>a+b,0)/arr.length) : null;
+  const medianReply = arr => {
+    if (!arr.length) return null;
+    const s = [...arr].sort((a,b)=>a-b);
+    return s[Math.floor(s.length/2)];
+  };
+  const replySpeed = {
+    selfAvg: avgReply(selfReplyTimes), selfMedian: medianReply(selfReplyTimes), selfCount: selfReplyTimes.length,
+    partnerAvg: avgReply(partnerReplyTimes), partnerMedian: medianReply(partnerReplyTimes), partnerCount: partnerReplyTimes.length,
+  };
+
+  // ── Emotion keywords ──
+  const EMO = {
+    positive: ['开心','快乐','高兴','喜欢','爱','感谢','谢谢','棒','好','厉害','漂亮','可爱','有趣','幸福','满足','期待','感动','温暖','甜蜜','兴奋','哈哈','嘿嘿'],
+    negative: ['难过','伤心','生气','害怕','担心','紧张','失望','后悔','烦','累','无聊','孤独','焦虑','痛苦','讨厌','累','困','头疼','崩溃','无语','尴尬'],
+    question: ['吗','呢','什么','怎么','为什么','哪','谁','几','是否'],
+  };
+  function countEmotion(texts) {
+    const result = { positive: 0, negative: 0, question: 0 };
+    for (const t of texts) {
+      for (const w of EMO.positive) if (t.includes(w)) result.positive++;
+      for (const w of EMO.negative) if (t.includes(w)) result.negative++;
+      for (const w of EMO.question) if (t.includes(w)) result.question++;
+    }
+    return result;
+  }
+  const selfEmotion = countEmotion(selfText);
+  const partnerEmotion = hasPartner ? countEmotion(partnerMsgs.map(m => m.content)) : null;
+
   STATE.stats = {
     self: {
       total: selfMsgs.length,
       avgLength,
       wordFreq: selfWordFreq,
       topWords: topWordsSelf,
-      hourly,
-      weekday,
-      daily,
-      monthly,
-      lengths,
-      timeRange,
+      hourly, weekday, daily, monthly, lengths, timeRange,
+      replySpeed, emotion: selfEmotion,
     },
-    partner: partnerStats,
+    partner: partnerStats ? { ...partnerStats, emotion: partnerEmotion } : null,
     hasPartner: !!partnerStats,
   };
 }
@@ -982,6 +1039,65 @@ function createCharts(containerId) {
 
 // ── AI 人格分析 ──────────────────────────────────────
 
+async function streamAIRequest(endpoint, headers, body, onChunk, maxRetries = 2) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const resp = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ ...body, stream: true }),
+      });
+
+      if (!resp.ok) {
+        const errText = await resp.text();
+        if (attempt < maxRetries) {
+          onChunk(`\n[重试 ${attempt + 1}/${maxRetries}：API 返回 ${resp.status}]`);
+          await sleep(1000 * (attempt + 1));
+          continue;
+        }
+        throw new Error(`AI API 错误 (${resp.status}): ${errText.substring(0, 200)}`);
+      }
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let fullContent = '';
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith('data:')) continue;
+          const data = trimmed.slice(5).trim();
+          if (data === '[DONE]') continue;
+          try {
+            const chunk = JSON.parse(data);
+            const delta = chunk.choices?.[0]?.delta?.content || '';
+            if (delta) {
+              fullContent += delta;
+              onChunk(delta);
+            }
+          } catch {}
+        }
+      }
+      return fullContent;
+    } catch (err) {
+      if (attempt < maxRetries) {
+        onChunk(`\n[重试 ${attempt + 1}/${maxRetries}：${err.message}]`);
+        await sleep(1000 * (attempt + 1));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
 async function analyzePersonality() {
   const apiKey = document.getElementById('apiKey').value.trim();
   const endpoint = document.getElementById('apiEndpoint').value.trim();
@@ -993,20 +1109,24 @@ async function analyzePersonality() {
 
   updateProgress(60, '正在调用 AI 进行人格分析...');
 
+  // Show streaming output area
+  const streamEl = document.getElementById('aiStreamOutput');
+  if (streamEl) {
+    streamEl.style.display = 'block';
+    streamEl.innerHTML = '<div class="stream-label">AI 分析中...</div><div class="stream-text"></div>';
+  }
+  const streamTextEl = streamEl?.querySelector('.stream-text');
+
   const s = STATE.stats.self;
   const selfName = document.getElementById('selfName').value || '我';
   const partnerName = document.getElementById('partnerName').value || '对方';
 
-  // Sample messages for analysis
   const filterForAI = msgs => msgs
     .filter(m => m.content.length >= 10 && m.content.length <= 200)
     .slice(0, 120);
 
   const selfSamples = filterForAI(STATE.rawData.self);
   const partnerSamples = STATE.rawData.partner.length > 0 ? filterForAI(STATE.rawData.partner) : [];
-
-  const selfMsgText = selfSamples.map(m => '• ' + m.content).join('\n');
-  const partnerMsgText = partnerSamples.map(m => '• ' + m.content).join('\n');
 
   const prompt = (samples, name, isSelf) => `你是一位语言学人格研究者，正在分析一位用户的微信聊天记录样本。
 
@@ -1053,31 +1173,38 @@ ${samples.map(m => '• ' + m.content).join('\n')}
     'Authorization': `Bearer ${apiKey}`,
   };
 
-  // Analyze self
-  const selfResp = await fetch(endpoint, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      model,
-      messages: [{ role: 'user', content: prompt(selfSamples.length > 0 ? selfSamples.map(m => m.content) : ['无充足数据'], selfName, true) }],
-      max_tokens: 2500,
-      temperature: 0.7,
-    }),
+  const makeBody = (samples, name, isSelf) => ({
+    model,
+    messages: [{ role: 'user', content: prompt(samples.length > 0 ? samples.map(m => m.content) : ['无充足数据'], name, isSelf) }],
+    max_tokens: 2500,
+    temperature: 0.7,
   });
 
-  if (!selfResp.ok) {
-    const err = await selfResp.text();
-    throw new Error(`AI API 错误 (${selfResp.status}): ${err.substring(0, 200)}`);
+  // Analyze self with streaming
+  if (streamTextEl) streamTextEl.innerHTML = '';
+  let selfContent;
+  try {
+    selfContent = await streamAIRequest(
+      endpoint, headers,
+      makeBody(selfSamples, selfName, true),
+      delta => {
+        if (streamTextEl) {
+          streamTextEl.textContent += delta;
+          streamTextEl.scrollTop = streamTextEl.scrollHeight;
+        }
+      }
+    );
+  } catch (err) {
+    if (streamEl) streamEl.style.display = 'none';
+    throw err;
   }
-  const selfResult = await selfResp.json();
-  const selfContent = selfResult.choices?.[0]?.message?.content || '';
 
-  // Extract JSON from response
   const jsonMatch = selfContent.match(/\{[\s\S]*\}/);
   let selfPersonality;
   try {
     selfPersonality = JSON.parse(jsonMatch ? jsonMatch[0] : selfContent);
   } catch {
+    if (streamEl) streamEl.style.display = 'none';
     throw new Error('AI 返回的 JSON 解析失败');
   }
 
@@ -1085,24 +1212,26 @@ ${samples.map(m => '• ' + m.content).join('\n')}
   let partnerPersonality = null;
   if (partnerSamples.length >= 20) {
     updateProgress(75, '正在分析对方的人格特质...');
-    const partnerResp = await fetch(endpoint, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        model,
-        messages: [{ role: 'user', content: prompt(partnerSamples.map(m => m.content), partnerName, false) }],
-        max_tokens: 2500,
-        temperature: 0.7,
-      }),
-    });
-    if (partnerResp.ok) {
-      const pResult = await partnerResp.json();
-      const pContent = pResult.choices?.[0]?.message?.content || '';
+    if (streamTextEl) streamTextEl.innerHTML += '\n\n--- 分析对方 ---\n';
+    try {
+      const pContent = await streamAIRequest(
+        endpoint, headers,
+        makeBody(partnerSamples, partnerName, false),
+        delta => {
+          if (streamTextEl) {
+            streamTextEl.textContent += delta;
+            streamTextEl.scrollTop = streamTextEl.scrollHeight;
+          }
+        }
+      );
       const pMatch = pContent.match(/\{[\s\S]*\}/);
-      try {
-        partnerPersonality = JSON.parse(pMatch ? pMatch[0] : pContent);
-      } catch { /* ignore parse failure for partner */ }
-    }
+      partnerPersonality = JSON.parse(pMatch ? pMatch[0] : pContent);
+    } catch { /* ignore parse failure for partner */ }
+  }
+
+  // Hide streaming output after completion
+  if (streamEl) {
+    setTimeout(() => { streamEl.style.display = 'none'; }, 1500);
   }
 
   STATE.personality = { self: selfPersonality, partner: partnerPersonality };
@@ -1272,6 +1401,41 @@ function generateReportHTML() {
       <div class="hm-leg-row">${tag(partnerName, true)} &nbsp;少 <div class="hm-leg-cells"><div class="hm-leg-cell" style="background:#D8EDEA"></div><div class="hm-leg-cell" style="background:#8ABFB8"></div><div class="hm-leg-cell" style="background:#5A9B93"></div><div class="hm-leg-cell" style="background:#4A7B6F"></div><div class="hm-leg-cell" style="background:#2E5048"></div></div> 多</div>` : ''}
     </div>`;
 
+  // Reply speed HTML
+  const fmtTime = sec => {
+    if (sec == null) return '—';
+    if (sec < 60) return sec + '秒';
+    if (sec < 3600) return Math.round(sec/60) + '分钟';
+    return (sec/3600).toFixed(1) + '小时';
+  };
+  const rs = s.replySpeed;
+  const replyHTML = `<div class="stats" style="margin-bottom:0">
+    <div class="stat"><div class="stat-num">${fmtTime(rs.selfMedian)}</div><div class="stat-lbl">${selfName} 回复中位数</div></div>
+    <div class="stat"><div class="stat-num">${rs.selfCount}</div><div class="stat-lbl">${selfName} 回复次数</div></div>
+    ${hasPartner ? `<div class="stat"><div class="stat-num">${fmtTime(rs.partnerMedian)}</div><div class="stat-lbl">${partnerName} 回复中位数</div></div>` : `<div class="stat"><div class="stat-num">${fmtTime(rs.selfAvg)}</div><div class="stat-lbl">${selfName} 回复均值</div></div>`}
+  </div>`;
+
+  // Emotion HTML
+  const emo = s.emotion;
+  const emoTotal = Math.max(1, emo.positive + emo.negative + emo.question);
+  const emoHTML = (data, name, isP) => {
+    const t = Math.max(1, data.positive + data.negative + data.question);
+    return `<div style="margin-bottom:10px">
+      ${tag(name, isP)}
+      <div style="display:flex;gap:3px;height:22px;border-radius:6px;overflow:hidden;margin:6px 0">
+        <div style="width:${(data.positive/t*100).toFixed(1)}%;background:${isP?'var(--tl-500)':'var(--br-500)'}" title="积极 ${data.positive}"></div>
+        <div style="width:${(data.negative/t*100).toFixed(1)}%;background:${isP?'var(--tl-200)':'var(--br-300)'}" title="消极 ${data.negative}"></div>
+        <div style="width:${(data.question/t*100).toFixed(1)}%;background:var(--tx-400);opacity:.3" title="疑问 ${data.question}"></div>
+      </div>
+      <div style="display:flex;gap:12px;font-size:.76em;color:var(--tx-400)">
+        <span>积极 ${data.positive}</span><span>消极 ${data.negative}</span><span>疑问 ${data.question}</span>
+      </div>
+    </div>`;
+  };
+  const emotionSection = hasPartner
+    ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">${emoHTML(emo, selfName, false)}${emoHTML(STATE.stats.partner.emotion, partnerName, true)}</div>`
+    : emoHTML(emo, selfName, false);
+
   const reliability = p?.self?.reliability || '';
 
   const bodyHTML = `
@@ -1291,9 +1455,11 @@ function generateReportHTML() {
 <div class="section" style="--i:2"><div class="section-title">📊 消息行为分析</div>${chartsHTML}</div>
 <div class="section" style="--i:3"><div class="section-title">💬 高频词对比</div><div id="chart-wc" style="height:360px"></div></div>
 <div class="section" style="--i:4"><div class="section-title">📅 聊天频率热力图</div>${heatmapHTML}</div>
-${big5HTML ? `<div class="section" style="--i:5"><div class="section-title">🧠 大五人格分析 (Big Five)</div>${big5HTML}</div>` : ''}
-${mbtiHTML ? `<div class="section" style="--i:6"><div class="section-title">🔮 MBTI 推断</div>${mbtiHTML}</div>` : ''}
-${styleHTML ? `<div class="section" style="--i:7"><div class="section-title">✨ AI 对${hasDualAI?'你们':'你'}的总结</div>${styleHTML}</div>` : ''}
+<div class="section" style="--i:5"><div class="section-title">⚡ 回复速度分析</div>${replyHTML}</div>
+<div class="section" style="--i:6"><div class="section-title">😊 情绪关键词</div>${emotionSection}</div>
+${big5HTML ? `<div class="section" style="--i:7"><div class="section-title">🧠 大五人格分析 (Big Five)</div>${big5HTML}</div>` : ''}
+${mbtiHTML ? `<div class="section" style="--i:8"><div class="section-title">🔮 MBTI 推断</div>${mbtiHTML}</div>` : ''}
+${styleHTML ? `<div class="section" style="--i:9"><div class="section-title">✨ AI 对${hasDualAI?'你们':'你'}的总结</div>${styleHTML}</div>` : ''}
 ${reliability ? `<div style="font-size:.78em;color:var(--tx-400,#8a7a6a);text-align:center;padding:12px">📋 ${reliability}</div>` : ''}
 <div class="disc">⚠️ 本报告基于语言模式的统计推断，仅供娱乐与自我探索，不构成心理学诊断。<br>MBTI 信效度存在学术争议；Big Five 具有更强的研究支撑，但仍需谨慎解读。<div class="brand">🍪 姜饼探AI · Ginger Report v2.0</div></div>`;
 
@@ -1615,6 +1781,27 @@ body {
 .brand {
   font-family: var(--ff-display); font-weight: 700; color: var(--br-500);
   margin-top: 12px; font-size: 1em; letter-spacing: .08em;
+}
+
+/* AI Streaming Output */
+.ai-stream-output {
+  display: none;
+  background: var(--surface-2);
+  border: 1.5px solid var(--br-100);
+  border-radius: var(--r-md);
+  padding: 14px 18px;
+  margin-top: 14px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.stream-label {
+  font-size: .79em; font-weight: 600; color: var(--br-700);
+  margin-bottom: 8px;
+}
+.stream-text {
+  font-size: .81em; color: var(--tx-600);
+  line-height: 1.7; white-space: pre-wrap; word-break: break-all;
+  font-family: var(--ff-body);
 }
 
 /* Responsive */
