@@ -9,14 +9,36 @@ const STATE = {
 
 // ── 中文停用词 ────────────────────────────────────────
 const STOPWORDS = new Set([
+  // 虚词 / 功能词
   '的','了','是','在','我','你','他','她','它','们','这','那','就','都','和','与',
   '但','也','很','有','没','不','一','个','上','对','说','好','要','么','啊','呢',
   '吧','哦','嗯','然后','所以','因为','如果','可以','还是','已经','什么','怎么',
   '为什么','就是','还有','其实','感觉','觉得','现在','时候','一个','这个','那个',
   '一下','一起','一直','一样','一点','一些','知道','真的','看到','会','能','去',
-  '来','还','被','让','给','把','做','做','做','做','用','想','看','应该','已经',
-  '之后','之前','不过','而且','但是','虽然','可是','好像','真的','非常','比较',
-  '有点','挺','太','很','特别','最近','上次','今天','明天','昨天',
+  '来','还','被','让','给','把','做','用','想','看','应该','之后','之前','不过',
+  '而且','但是','虽然','可是','好像','非常','比较','有点','挺','太','特别','最近',
+  '上次','今天','明天','昨天','的话','可能','需要','自己','比较','可能','应该',
+  '或者','以及','关于','通过','进行','开始','结束','这样','那样','怎样','多少',
+  '哪里','哪个','哪些','谁','几','每','各','任何','某些','所有','全部','其他',
+  '别的','另','再','又','也','才','刚','将','正','曾','已经','终于','始终','永远',
+  // 聊天高频无意义词
+  '嗯嗯','哈哈','哈哈哈','嘿嘿','呵呵','嘻嘻','哎呀','哎哟','天哪','哇塞',
+  '嗯哼','呃','额','噢','喔','哇','呀','啦','嘛','呐','哎','唉','嘻','嘿',
+  '好的','好吧','行','行吧','ok','OK','okay','Yes','No','no','yes',
+  '谢谢','感谢','抱歉','不好意思','对不起','没事','没关系','客气',
+  '请问','麻烦','帮忙','帮','拜托','打扰',
+  // 称呼 / 代词
+  '人家','咱们','大家','各位','亲','宝贝','亲爱的','哥哥','姐姐','弟弟','妹妹',
+  '先生','女士','老师','同学','朋友','兄弟','姐妹',
+  // 时间 / 量词
+  '分钟','小时','天','周','月','年','秒','次','回','遍','趟','下',
+  '块钱','元','角','分','万','亿','千','百','十',
+  '个','位','条','件','样','种','类','些','点','片','块','道','张','本','台','部',
+  // 标点 / 符号
+  '…','——','——','【','】','「','」','『','』','（','）','《','》',
+  // 常见无意义短语
+  '是不是','有没有','能不能','会不会','可不可以','要不要','对不对','好不好',
+  '怎么说','怎么办','什么时候','什么地方','什么东西','为什么呢',
 ]);
 
 // ── UI 交互 ──────────────────────────────────────────
@@ -241,6 +263,11 @@ function parseJSON(raw) {
 
   STATE.rawData = { self: [], partner: [] };
   for (const m of messages) {
+    // Skip system messages and non-text messages
+    const msgType = m.type ?? m.msg_type;
+    if (msgType === 10000 || msgType === 'system') continue;
+    if (msgType && msgType !== 1 && msgType !== 'text' && msgType !== '1') continue;
+
     const content = cleanMessage(String(m.content || m.text || m.message || m.msg || ''));
     if (!content) continue;
     const isSelf = m.is_sender !== undefined
@@ -249,6 +276,7 @@ function parseJSON(raw) {
 
     let ts;
     if (m.timestamp) ts = /^\d{10,13}$/.test(String(m.timestamp)) ? parseInt(m.timestamp) : new Date(m.timestamp).getTime() / 1000;
+    else if (m.time) ts = new Date(m.time).getTime() / 1000;
     else if (m.datetime) ts = new Date(m.datetime).getTime() / 1000;
     else if (m.create_time) ts = parseInt(m.create_time);
     else if (m.ts) ts = parseInt(m.ts);
@@ -359,10 +387,6 @@ function segmentChinese(text) {
     const trigram = chars.substring(i, i + 3);
     if (!STOPWORDS.has(trigram) && !/^\d+$/.test(trigram)) words.push(trigram);
   }
-  // Single chars (for completeness)
-  for (const ch of chars) {
-    if (!STOPWORDS.has(ch) && ch.charCodeAt(0) > 127) words.push(ch);
-  }
   return words;
 }
 
@@ -379,7 +403,14 @@ function computeStats() {
 
   // ── Self stats ──
   const selfText = selfMsgs.map(m => m.content);
-  const selfAllText = selfText.join(' ');
+  // Filter for word frequency: exclude system msgs, emoji-only, very short
+  const selfCleanForWords = selfText.filter(t =>
+    t.length >= 2 &&
+    !/^(以上|我通过了|系统消息|图片|语音|视频|文件|表情包|链接|撤回了一条消息)/.test(t) &&
+    !/^\[.+\]$/.test(t) &&
+    !/^[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F900}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\s]+$/u.test(t)
+  );
+  const selfAllText = selfCleanForWords.join(' ');
   const selfWords = segmentChinese(selfAllText);
   const selfWordFreq = {};
   selfWords.forEach(w => { selfWordFreq[w] = (selfWordFreq[w] || 0) + 1; });
@@ -416,7 +447,13 @@ function computeStats() {
   let partnerStats = null;
   if (partnerMsgs.length >= 10) {
     const pText = partnerMsgs.map(m => m.content);
-    const pAllText = pText.join(' ');
+    const pCleanForWords = pText.filter(t =>
+      t.length >= 2 &&
+      !/^(以上|我通过了|系统消息|图片|语音|视频|文件|表情包|链接|撤回了一条消息)/.test(t) &&
+      !/^\[.+\]$/.test(t) &&
+      !/^[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F900}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\s]+$/u.test(t)
+    );
+    const pAllText = pCleanForWords.join(' ');
     const pWords = segmentChinese(pAllText);
     const pWordFreq = {};
     pWords.forEach(w => { pWordFreq[w] = (pWordFreq[w] || 0) + 1; });
@@ -594,17 +631,28 @@ function createCharts(containerId) {
     const el = container.querySelector('#' + elId);
     if (!el) return;
     const chart = echarts.init(el);
-    const data = Object.entries(wordFreq).slice(0, 80).map(([name, value]) => ({
-      name, value: Math.log(value + 1) * 10
-    }));
-    if (data.length === 0) return;
+    // Filter out noise: emoji tags, system messages, single-char filler, very low freq
+    const filtered = Object.entries(wordFreq)
+      .filter(([w, v]) => {
+        if (v < 2) return false;                          // 至少出现 2 次
+        if (w.length < 2) return false;                    // 至少 2 个字符
+        if (STOPWORDS.has(w)) return false;
+        if (/^\[.+\]$/.test(w)) return false;              // [微笑] 等表情标签
+        if (/^(以上|以下是|系统|消息|图片|语音|视频|文件|链接|撤回|表情包)/.test(w)) return false;
+        if (/^\d+$/.test(w)) return false;                 // 纯数字
+        if (/^(哈|嘿|嗯|呃|额|噢|喔|哇|呀|啦|嘛|呐|哎|唉|嘻|呵)+$/.test(w)) return false;
+        return true;
+      })
+      .slice(0, 60)
+      .map(([name, value]) => ({ name, value: Math.log(value + 1) * 10 }));
+    if (filtered.length === 0) return;
     chart.setOption({
       tooltip: { show: true },
       title: { text: title, left: 'center', top: 6, textStyle: { fontSize: 14, color: theme.textColor } },
       series: [{
         type: 'wordCloud',
         shape: 'circle',
-        sizeRange: [12, 50],
+        sizeRange: [14, 55],
         rotationRange: [-45, 45],
         gridSize: 8,
         drawOutOfBound: false,
@@ -613,7 +661,7 @@ function createCharts(containerId) {
           fontWeight: 'normal',
           color: () => ['#8b5e3c','#c68642','#d4956a','#e8c49a','#4a7b6f','#6faa9c','#8abfb8'][Math.floor(Math.random()*7)]
         },
-        data
+        data: filtered
       }]
     });
     STATE.charts[elId] = chart;
@@ -647,58 +695,163 @@ function createCharts(containerId) {
     STATE.charts.radar = chart;
   }
 
-  // Heatmap
-  function chartHeatmap(elId, dailyData, title, colorRange) {
-    const el = container.querySelector('#' + elId);
-    if (!el || Object.keys(dailyData).length === 0) return;
-    const chart = echarts.init(el);
+  // Custom HTML/CSS heatmap (GitHub-style calendar grid)
+  window._initHeatmap = function(selfData, partnerData, hasPartner) {
+    var SELF_PAL    = ['#EDE5DC','#D4A882','#B87040','#8B5E3C','#5A3020'];
+    var PARTNER_PAL = ['#D8EDEA','#8ABFB8','#5A9B93','#4A7B6F','#2E5048'];
+    var MON = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
 
-    const dates = Object.entries(dailyData).map(([d, v]) => [d, v]);
-    if (dates.length === 0) return;
+    var allKeys = Object.keys(selfData).concat(hasPartner ? Object.keys(partnerData) : []);
+    var yearSet = {};
+    allKeys.forEach(function(k) { yearSet[k.slice(0, 4)] = true; });
+    var years = Object.keys(yearSet).sort();
+    if (!years.length) return;
 
-    const data = dates.map(([date, value]) => [date, value]);
+    var curYear = years[years.length - 1];
+    var btnBox = document.getElementById('hm-year-btns');
+    if (!btnBox) return;
+    btnBox.innerHTML = '';
 
-    // Calculate years
-    const years = [...new Set(dates.map(([d]) => d.substring(0, 4)))].sort();
-    let currentYear = years[years.length - 1];
+    years.forEach(function(y) {
+      var btn = document.createElement('button');
+      btn.className = 'hm-yr-btn' + (y === curYear ? ' hm-active' : '');
+      btn.textContent = y;
+      btn.onclick = function() {
+        btnBox.querySelectorAll('.hm-yr-btn').forEach(function(b) { b.classList.remove('hm-active'); });
+        btn.classList.add('hm-active');
+        curYear = y;
+        renderGrid('hm-self-grid', selfData, SELF_PAL);
+        if (hasPartner) renderGrid('hm-partner-grid', partnerData, PARTNER_PAL);
+      };
+      btnBox.appendChild(btn);
+    });
 
-    function renderYear(year) {
-      const yearData = data.filter(([d]) => d.startsWith(year));
-      const maxVal = Math.max(1, ...yearData.map(([,v]) => v));
-      chart.setOption({
-        title: { text: title, left: 'center', top: 6, textStyle: { fontSize: 14, color: theme.textColor } },
-        tooltip: { position: 'top', formatter: p => `${p.data[0]}: ${p.data[1]} 条` },
-        visualMap: { min: 0, max: maxVal, calculable: true, orient: 'horizontal', left: 'center', bottom: 0,
-          inRange: { color: colorRange }, show: false },
-        calendar: { range: year, cellSize: ['auto', 13], dayLabel: { nameMap: 'CN' },
-          monthLabel: { nameMap: 'CN' }, itemStyle: { borderWidth: 2, borderColor: '#fff' } },
-        series: [{ type: 'heatmap', coordinateSystem: 'calendar', data: yearData }]
-      });
+    function getColor(n, mx, pal) {
+      if (!n || mx === 0) return pal[0];
+      var r = n / mx;
+      return r < 0.15 ? pal[1] : r < 0.40 ? pal[2] : r < 0.72 ? pal[3] : pal[4];
     }
 
-    // Year switcher
-    if (years.length > 1) {
-      const switcher = document.createElement('div');
-      switcher.className = 'hm-year-switcher';
-      switcher.style.cssText = 'text-align:center;margin-bottom:8px';
-      years.forEach(y => {
-        const btn = document.createElement('button');
-        btn.textContent = y;
-        btn.style.cssText = `margin:2px 4px;padding:3px 12px;border-radius:12px;border:1.5px solid #d4956a;background:${y===currentYear?'#8b5e3c':'transparent'};color:${y===currentYear?'#fff':'#8b5e3c'};cursor:pointer;font-size:12px`;
-        btn.onclick = () => {
-          currentYear = y;
-          switcher.querySelectorAll('button').forEach(b => { b.style.background='transparent'; b.style.color='#8b5e3c'; });
-          btn.style.background = '#8b5e3c';
-          btn.style.color = '#fff';
-          renderYear(y);
-        };
-        switcher.appendChild(btn);
-      });
-      el.parentElement.insertBefore(switcher, el);
+    function ymd(d) {
+      return d.getFullYear() + '-' +
+        String(d.getMonth() + 1).padStart(2, '0') + '-' +
+        String(d.getDate()).padStart(2, '0');
     }
-    renderYear(currentYear);
-    STATE.charts[elId] = chart;
-  }
+
+    function renderGrid(elId, data, pal) {
+      var el = document.getElementById(elId);
+      if (!el) return;
+      el.innerHTML = '';
+
+      var yr = parseInt(curYear, 10);
+      var yrVals = [];
+      Object.keys(data).forEach(function(k) {
+        if (k.startsWith(curYear)) yrVals.push(+data[k]);
+      });
+      var mx = yrVals.length ? Math.max.apply(null, yrVals) : 1;
+
+      var wrap = document.createElement('div');
+      wrap.className = 'hm-flex';
+
+      var dayCol = document.createElement('div');
+      dayCol.className = 'hm-daycol';
+      var sp = document.createElement('div');
+      sp.className = 'hm-month-sp';
+      dayCol.appendChild(sp);
+      ['一','二','三','四','五','六','日'].forEach(function(lbl, i) {
+        var d = document.createElement('div');
+        d.className = 'hm-daylbl';
+        d.textContent = (i % 2 === 0) ? lbl : '';
+        dayCol.appendChild(d);
+      });
+      wrap.appendChild(dayCol);
+
+      var scroll = document.createElement('div');
+      scroll.className = 'hm-scroll';
+
+      var jan1 = new Date(yr, 0, 1);
+      var dow0 = (jan1.getDay() + 6) % 7;
+      var startD = new Date(jan1);
+      startD.setDate(startD.getDate() - dow0);
+
+      var dec31 = new Date(yr, 11, 31);
+      var dow31 = (dec31.getDay() + 6) % 7;
+      var endD = new Date(dec31);
+      endD.setDate(endD.getDate() + (6 - dow31));
+
+      var cur = new Date(startD);
+      var seenMon = {};
+
+      while (cur <= endD) {
+        var col = document.createElement('div');
+        col.className = 'hm-col';
+
+        var monLbl = document.createElement('div');
+        monLbl.className = 'hm-monlbl';
+
+        var weekEl = document.createElement('div');
+        weekEl.className = 'hm-weekcol';
+
+        for (var i = 0; i < 7; i++) {
+          var inYr = cur.getFullYear() === yr;
+
+          if (inYr && cur.getDate() === 1 && !seenMon[cur.getMonth()]) {
+            monLbl.textContent = MON[cur.getMonth()];
+            seenMon[cur.getMonth()] = true;
+          }
+
+          var cell = document.createElement('div');
+          if (inYr) {
+            var ds = ymd(cur);
+            var n = +(data[ds] || 0);
+            cell.className = 'hm-cell';
+            cell.style.backgroundColor = getColor(n, mx, pal);
+            cell.dataset.d = ds;
+            cell.dataset.n = n;
+          } else {
+            cell.className = 'hm-cell hm-out';
+          }
+          weekEl.appendChild(cell);
+          cur.setDate(cur.getDate() + 1);
+        }
+
+        col.appendChild(monLbl);
+        col.appendChild(weekEl);
+        scroll.appendChild(col);
+      }
+
+      wrap.appendChild(scroll);
+      el.appendChild(wrap);
+    }
+
+    renderGrid('hm-self-grid', selfData, SELF_PAL);
+    if (hasPartner) renderGrid('hm-partner-grid', partnerData, PARTNER_PAL);
+
+    // Tooltip (only create once)
+    if (!document.querySelector('.hm-tip')) {
+      var tip = document.createElement('div');
+      tip.className = 'hm-tip';
+      document.body.appendChild(tip);
+
+      document.addEventListener('mouseover', function(e) {
+        var t = e.target;
+        if (t.classList && t.classList.contains('hm-cell') && t.dataset && t.dataset.d) {
+          var n = +t.dataset.n;
+          tip.textContent = t.dataset.d + (n > 0 ? '  ·  ' + n + ' 条' : '  ·  无消息');
+          tip.style.display = 'block';
+        }
+      });
+      document.addEventListener('mouseout', function(e) {
+        if (e.target.classList && e.target.classList.contains('hm-cell')) {
+          tip.style.display = 'none';
+        }
+      });
+      document.addEventListener('mousemove', function(e) {
+        tip.style.left = (e.clientX + 14) + 'px';
+        tip.style.top  = (e.clientY - 38) + 'px';
+      });
+    }
+  };
 
   // Execute
   chartHourly();
@@ -715,13 +868,9 @@ function createCharts(containerId) {
     chartWordCloud('chart-wc-partner', STATE.stats.partner.wordFreq, `${partnerName} 的高频词`);
   }
 
-  if (Object.keys(s.daily).length > 0) {
-    chartHeatmap('chart-hm-self', s.daily, `${selfName} 的聊天热力图`,
-      ['#ede5dc', '#d4a882', '#b87040', '#8b5e3c', '#5a3020']);
-  }
-  if (STATE.stats.hasPartner && STATE.stats.partner && Object.keys(STATE.stats.partner.daily).length > 0) {
-    chartHeatmap('chart-hm-partner', STATE.stats.partner.daily, `${partnerName} 的聊天热力图`,
-      ['#d8edea', '#8abfb8', '#5a9b93', '#4a7b6f', '#2e5048']);
+  // Custom HTML/CSS heatmap (GitHub-style calendar grid)
+  if (window._initHeatmap && Object.keys(s.daily).length > 0) {
+    window._initHeatmap(s.daily, STATE.stats.hasPartner ? STATE.stats.partner?.daily || {} : {}, STATE.stats.hasPartner && !!STATE.stats.partner);
   }
 }
 
@@ -987,7 +1136,7 @@ function generateReportHTML() {
     styleHTML = stylePanel(style, selfName, false);
   }
 
-  // Charts HTML
+  // Charts HTML (ECharts)
   const chartsHTML = `
     <div class="chart-grid">
       <div id="chart-hourly" class="chart-cell"></div>
@@ -998,9 +1147,28 @@ function generateReportHTML() {
     <div class="chart-grid" style="grid-template-columns:${hasPartner?'1fr 1fr':'1fr'}">
       <div id="chart-wc-self" class="chart-cell-full"></div>
       ${hasPartner ? '<div id="chart-wc-partner" class="chart-cell-full"></div>' : ''}
+    </div>`;
+
+  // Custom HTML/CSS heatmap (GitHub-style calendar grid)
+  const heatmapHTML = `
+    <div class="hm-controls">
+      <span class="hm-label-sm">年份</span>
+      <div class="hm-yr-btns" id="hm-year-btns"></div>
     </div>
-    <div id="chart-hm-self" style="height:200px;margin-bottom:10px"></div>
-    ${hasPartner ? '<div id="chart-hm-partner" style="height:200px;margin-bottom:10px"></div>' : ''}`;
+    <div class="hm-person-block">
+      <div class="hm-person-label">${tag(selfName, false)}</div>
+      <div id="hm-self-grid"></div>
+    </div>
+    ${hasPartner ? `<hr class="hm-sep">
+    <div class="hm-person-block">
+      <div class="hm-person-label">${tag(partnerName, true)}</div>
+      <div id="hm-partner-grid"></div>
+    </div>` : ''}
+    <div class="hm-legend">
+      <div class="hm-leg-row">${tag(selfName, false)} &nbsp;少 <div class="hm-leg-cells"><div class="hm-leg-cell" style="background:#EDE5DC"></div><div class="hm-leg-cell" style="background:#D4A882"></div><div class="hm-leg-cell" style="background:#B87040"></div><div class="hm-leg-cell" style="background:#8B5E3C"></div><div class="hm-leg-cell" style="background:#5A3020"></div></div> 多</div>
+      ${hasPartner ? `&nbsp;&nbsp;
+      <div class="hm-leg-row">${tag(partnerName, true)} &nbsp;少 <div class="hm-leg-cells"><div class="hm-leg-cell" style="background:#D8EDEA"></div><div class="hm-leg-cell" style="background:#8ABFB8"></div><div class="hm-leg-cell" style="background:#5A9B93"></div><div class="hm-leg-cell" style="background:#4A7B6F"></div><div class="hm-leg-cell" style="background:#2E5048"></div></div> 多</div>` : ''}
+    </div>`;
 
   const reliability = p?.self?.reliability || '';
 
@@ -1019,9 +1187,10 @@ function generateReportHTML() {
   <div class="stat"><div class="stat-num">${spanStr}</div><div class="stat-lbl">数据覆盖时长</div></div>
 </div>
 <div class="section" style="--i:2"><div class="section-title">📊 消息行为分析</div>${chartsHTML}</div>
-${big5HTML ? `<div class="section" style="--i:3"><div class="section-title">🧠 大五人格分析 (Big Five)</div>${big5HTML}</div>` : ''}
-${mbtiHTML ? `<div class="section" style="--i:4"><div class="section-title">🔮 MBTI 推断</div>${mbtiHTML}</div>` : ''}
-${styleHTML ? `<div class="section" style="--i:5"><div class="section-title">✨ AI 对${hasDualAI?'你们':'你'}的总结</div>${styleHTML}</div>` : ''}
+<div class="section" style="--i:3"><div class="section-title">📅 聊天频率热力图</div>${heatmapHTML}</div>
+${big5HTML ? `<div class="section" style="--i:4"><div class="section-title">🧠 大五人格分析 (Big Five)</div>${big5HTML}</div>` : ''}
+${mbtiHTML ? `<div class="section" style="--i:5"><div class="section-title">🔮 MBTI 推断</div>${mbtiHTML}</div>` : ''}
+${styleHTML ? `<div class="section" style="--i:6"><div class="section-title">✨ AI 对${hasDualAI?'你们':'你'}的总结</div>${styleHTML}</div>` : ''}
 ${reliability ? `<div style="font-size:.78em;color:var(--tx-400,#8a7a6a);text-align:center;padding:12px">📋 ${reliability}</div>` : ''}
 <div class="disc">⚠️ 本报告基于语言模式的统计推断，仅供娱乐与自我探索，不构成心理学诊断。<br>MBTI 信效度存在学术争议；Big Five 具有更强的研究支撑，但仍需谨慎解读。<div class="brand">🍪 姜饼探AI · Ginger Report v2.0</div></div>`;
 
