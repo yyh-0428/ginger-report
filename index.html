@@ -586,10 +586,7 @@ body {
     <div class="card-title">📂 输入聊天数据</div>
 
     <div class="tabs" id="inputTabs">
-      <button class="tab active" data-mode="csv">📊 CSV</button>
-      <button class="tab" data-mode="json">📋 JSON</button>
-      <button class="tab" data-mode="txt">📝 TXT</button>
-      <button class="tab" data-mode="md">📑 Markdown</button>
+      <button class="tab active" data-mode="file">📁 文件上传</button>
       <button class="tab" data-mode="manual">✍️ 手动输入</button>
     </div>
 
@@ -597,7 +594,7 @@ body {
       <div class="upload-zone" id="uploadZone">
         <div class="upload-icon">📁</div>
         <div class="upload-text">点击上传或拖拽文件到此处</div>
-        <div class="upload-hint" id="uploadHint">支持 CSV / JSON / TXT / Markdown 格式</div>
+        <div class="upload-hint" id="uploadHint">自动识别格式：CSV / JSON / TXT / Markdown</div>
         <div class="upload-file" id="uploadFileName"></div>
       </div>
       <input type="file" id="fileInput" style="display:none" accept=".csv,.json,.txt,.md,.markdown">
@@ -613,13 +610,14 @@ body {
       <div class="form-row">
         <div class="form-group">
           <label>🙋 你的名字</label>
-          <input type="text" id="selfName" placeholder="例如：小明" value="我">
+          <input type="text" id="selfName" placeholder="自动识别" value="">
         </div>
         <div class="form-group">
           <label>💬 对方的名字</label>
-          <input type="text" id="partnerName" placeholder="例如：小红" value="对方">
+          <input type="text" id="partnerName" placeholder="自动识别" value="">
         </div>
       </div>
+      <div class="manual-hint" id="nameHint">上传文件后将自动识别发送者名字，也可手动修改</div>
     </div>
   </div>
 
