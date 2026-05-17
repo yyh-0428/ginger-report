@@ -1,10 +1,11 @@
 // ── 全局状态 ──────────────────────────────────────────
 const STATE = {
-  mode: 'csv',
+  mode: 'file',
   rawData: null,        // { self: [], partner: [] } — messages array
   stats: null,          // computed statistics
   charts: {},           // ECharts instances
   personality: null,    // AI analysis result
+  detectedNames: null,  // { self: '', partner: '' } — auto-detected from file
 };
 
 // ── 中文停用词 ────────────────────────────────────────
@@ -75,13 +76,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function updateUploadHint() {
-  const hints = {
-    csv: 'CSV 格式：需含 timestamp/datetime、sender/is_sender、content 列',
-    json: 'JSON 格式：{messages:[{timestamp,is_sender,content},...]}',
-    txt: 'TXT 格式：每行一条消息，格式 "发送者: 内容" 或 "时间 发送者 内容"',
-    md: 'Markdown 格式：聊天导出 .md 文件',
-  };
-  document.getElementById('uploadHint').textContent = hints[STATE.mode] || '支持 CSV / JSON / TXT / Markdown 格式';
+  document.getElementById('uploadHint').textContent = '自动识别格式：CSV / JSON / TXT / Markdown';
 }
 
 function handleFile(file) {
@@ -91,21 +86,21 @@ function handleFile(file) {
   reader.onload = () => {
     const text = reader.result;
     let parsed = false;
-    // Try all parsers in order: prefer extension, then try all as fallback
+    // Try preferred parser first, then all as fallback
+    const preferred = { csv: parseCSV, json: parseJSON, md: parseMarkdown, markdown: parseMarkdown, txt: parseTXT };
     const parsers = [];
-    if (ext === 'csv' || STATE.mode === 'csv') parsers.push(parseCSV);
-    if (ext === 'json' || STATE.mode === 'json') parsers.push(parseJSON);
-    if (ext === 'md' || ext === 'markdown' || STATE.mode === 'md') parsers.push(parseMarkdown);
-    parsers.push(parseTXT);
-    // Also try other parsers as fallback if primary fails
-    [parseCSV, parseJSON, parseTXT, parseMarkdown].forEach(p => { if (!parsers.includes(p)) parsers.push(p); });
+    if (preferred[ext]) parsers.push(preferred[ext]);
+    [parseJSON, parseCSV, parseTXT, parseMarkdown].forEach(p => { if (!parsers.includes(p)) parsers.push(p); });
 
     for (const parseFn of parsers) {
       try {
         STATE.rawData = { self: [], partner: [] };
+        STATE.detectedNames = null;
         parseFn(text);
         const total = STATE.rawData.self.length + STATE.rawData.partner.length;
         if (total >= 5) {
+          // Auto-detect names
+          autoDetectNames();
           toast('✅ 文件已加载，共 ' + total + ' 条消息');
           parsed = true;
           break;
@@ -118,6 +113,36 @@ function handleFile(file) {
     }
   };
   reader.readAsText(file, 'UTF-8');
+}
+
+function autoDetectNames() {
+  const selfField = document.getElementById('selfName');
+  const partnerField = document.getElementById('partnerName');
+  const hint = document.getElementById('nameHint');
+
+  // Collect names from parsed data
+  const selfNames = {};
+  const partnerNames = {};
+  STATE.rawData.self.forEach(m => { if (m.senderName) selfNames[m.senderName] = (selfNames[m.senderName] || 0) + 1; });
+  STATE.rawData.partner.forEach(m => { if (m.senderName) partnerNames[m.senderName] = (partnerNames[m.senderName] || 0) + 1; });
+
+  const topSelf = Object.entries(selfNames).sort((a, b) => b[1] - a[1])[0];
+  const topPartner = Object.entries(partnerNames).sort((a, b) => b[1] - a[1])[0];
+
+  if (topSelf) {
+    selfField.value = topSelf[0];
+    STATE.detectedNames = { self: topSelf[0] };
+  }
+  if (topPartner) {
+    partnerField.value = topPartner[0];
+    STATE.detectedNames = { ...(STATE.detectedNames || {}), partner: topPartner[0] };
+  }
+
+  if (topSelf || topPartner) {
+    const names = [topSelf?.[0], topPartner?.[0]].filter(Boolean).join(' & ');
+    hint.textContent = '✅ 已自动识别：' + names;
+    hint.style.color = '#4a7b6f';
+  }
 }
 
 function toggleAI() {
@@ -228,7 +253,8 @@ function parseCSV(raw) {
       if (t && t !== '1' && t !== 'text') continue; // non-text message
     }
 
-    const msg = { content: cleanMessage(content), ts };
+    const senderName = (colMap.sender !== undefined && cols[colMap.sender]) ? cols[colMap.sender].trim() : '';
+    const msg = { content: cleanMessage(content), ts, senderName };
     if (isSelf) STATE.rawData.self.push(msg);
     else STATE.rawData.partner.push(msg);
   }
@@ -281,7 +307,8 @@ function parseJSON(raw) {
     else if (m.create_time) ts = parseInt(m.create_time);
     else if (m.ts) ts = parseInt(m.ts);
 
-    (isSelf ? STATE.rawData.self : STATE.rawData.partner).push({ content, ts });
+    const senderName = m.display_name || m.sender_name || m.senderName || m.name || '';
+    (isSelf ? STATE.rawData.self : STATE.rawData.partner).push({ content, ts, senderName });
   }
   if (STATE.rawData.self.length < 2 && STATE.rawData.partner.length < 2) {
     throw new Error('JSON 中消息数量不足');
@@ -310,7 +337,7 @@ function parseTXT(raw) {
         const content = cleanMessage(m[2].trim());
         if (!content) break;
         const isSelf = sender === '我' || sender === (document.getElementById('selfName').value || '我');
-        (isSelf ? STATE.rawData.self : STATE.rawData.partner).push({ content, ts: null });
+        (isSelf ? STATE.rawData.self : STATE.rawData.partner).push({ content, ts: null, senderName: sender });
         matched = true;
         break;
       }
@@ -320,7 +347,7 @@ function parseTXT(raw) {
       const content = cleanMessage(line);
       if (content) {
         const isSelf = STATE.rawData.self.length <= STATE.rawData.partner.length;
-        (isSelf ? STATE.rawData.self : STATE.rawData.partner).push({ content, ts: null });
+        (isSelf ? STATE.rawData.self : STATE.rawData.partner).push({ content, ts: null, senderName: '' });
       }
     }
   }
@@ -346,7 +373,7 @@ function parseMarkdown(raw) {
       const content = cleanMessage(m[2].trim());
       if (!content) continue;
       const isSelf = sender === '我' || sender === (document.getElementById('selfName').value || '我');
-      (isSelf ? STATE.rawData.self : STATE.rawData.partner).push({ content, ts: null });
+      (isSelf ? STATE.rawData.self : STATE.rawData.partner).push({ content, ts: null, senderName: sender });
     }
   }
   if (STATE.rawData.self.length < 2 && STATE.rawData.partner.length < 2) {
@@ -369,23 +396,74 @@ const EMOJI_MAP = {
   ['[Grin]']:'😁',['[Smile]']:'😊',['[Laugh]']:'😂',['[Cry]']:'😢',['[Sob]']:'😭',
 };
 
-// ── 中文分词 (N-gram + 词典) ─────────────────────────
+// ── 中文词典 (常见2-4字词) ────────────────────────────
+const DICT = new Set([
+  // 2字高频词
+  '学习','考试','成绩','作业','老师','同学','学校','上课','放学','放假','复习','预习',
+  '数学','语文','英语','化学','物理','生物','历史','地理','政治','音乐','美术','体育',
+  '爸爸','妈妈','爷爷','奶奶','哥哥','姐姐','弟弟','妹妹','叔叔','阿姨','朋友','闺蜜',
+  '喜欢','开心','难过','生气','害怕','担心','紧张','激动','失望','伤心','后悔','感动',
+  '谢谢','抱歉','对不起','不好意思','没事','客气','麻烦','帮忙','拜托','打扰',
+  '吃饭','喝水','睡觉','起床','洗澡','出门','回家','上班','下班','加班','休息','运动',
+  '聊天','说话','告诉','回答','解释','道歉','安慰','鼓励','支持','帮助','陪伴',
+  '好看','漂亮','可爱','帅气','厉害','聪明','有趣','无聊','奇怪','搞笑','感人','温暖',
+  '照片','视频','语音','表情','红包','转账','朋友圈','公众号','小程序','群聊',
+  '明天','昨天','今天','后天','前天','早上','中午','下午','晚上','凌晨','周末','假期',
+  '分钟','小时','秒钟','一点','一些','一下','一直','一起','一样','一定','一般',
+  '真的','确实','当然','绝对','肯定','可能','也许','大概','应该','似乎','好像','仿佛',
+  '感觉','觉得','认为','相信','希望','期待','想象','回忆','忘记','记得','发现','注意',
+  '开始','结束','继续','停止','放弃','坚持','尝试','努力','成功','失败','进步','退步',
+  '手机','电脑','平板','耳机','充电','网络','信号','密码','账号','软件','应用',
+  '奶茶','咖啡','饮料','零食','水果','蛋糕','火锅','烧烤','外卖','食堂','餐厅','超市',
+  '衣服','裤子','鞋子','裙子','帽子','围巾','手套','外套','包包',
+  '感冒','发烧','咳嗽','头疼','肚子','医院','吃药','打针','手术','住院','康复','健康',
+  // 3字词
+  '不好意思','没关系','不知道','真的吗','为什么','怎么办','还可以','差不多',
+  '哈哈哈','嘿嘿嘿','嗯嗯嗯','好好好','对对对','加油啊','辛苦了','早点睡','晚安啦',
+  '想你了','想见你','想回家','想出去','想吃啥','想干嘛',
+  '开心啊','好看啊','漂亮啊','可爱啊','厉害啊','聪明啊',
+  '谢谢啊','没事的','别担心','吃饭了','睡觉了','起床了','出门了','回家了','到家了',
+  '拍照片','发红包','朋友圈','公众号','聊天记录',
+  // 4字词
+  '真的不好意思','没有没有','加油加油','辛苦辛苦',
+  '晚安晚安','好好学习','天天向上','努力加油','坚持下去','继续加油',
+  '生日快乐','新年快乐','节日快乐','恭喜发财','万事如意','心想事成',
+  '一路顺风','注意安全','注意身体','好好休息','好好吃饭',
+  '开开心心','快快乐乐','平平安安','健健康康','顺顺利利',
+]);
 
+// ── 中文分词 (词典优先 + N-gram) ─────────────────────
 function segmentChinese(text) {
-  // Mixed approach: character bigrams/trigrams + stopword filtering
-  const clean = text.replace(/[^\u4e00-\u9fff\w]/g, ' ').replace(/\s+/g, ' ').trim();
-  const chars = clean.replace(/\s/g, '');
+  const clean = text.replace(/[^一-鿿\w]/g, ' ').replace(/\s+/g, ' ').trim();
   const words = [];
 
-  // Bigrams
-  for (let i = 0; i < chars.length - 1; i++) {
-    const bigram = chars.substring(i, i + 2);
-    if (!STOPWORDS.has(bigram) && !/^\d+$/.test(bigram)) words.push(bigram);
-  }
-  // Trigram
-  for (let i = 0; i < chars.length - 2; i++) {
-    const trigram = chars.substring(i, i + 3);
-    if (!STOPWORDS.has(trigram) && !/^\d+$/.test(trigram)) words.push(trigram);
+  const segments = clean.split(/\s+/);
+  for (const seg of segments) {
+    if (!seg) continue;
+    let i = 0;
+    while (i < seg.length) {
+      let found = false;
+      for (let len = 4; len >= 2; len--) {
+        if (i + len <= seg.length) {
+          const w = seg.substring(i, i + len);
+          if (DICT.has(w) && !STOPWORDS.has(w)) {
+            words.push(w);
+            i += len;
+            found = true;
+            break;
+          }
+        }
+      }
+      if (!found) {
+        if (i + 2 <= seg.length) {
+          const bg = seg.substring(i, i + 2);
+          if (!STOPWORDS.has(bg) && !/^\d+$/.test(bg)) {
+            words.push(bg);
+          }
+        }
+        i++;
+      }
+    }
   }
   return words;
 }
@@ -626,42 +704,54 @@ function createCharts(containerId) {
     STATE.charts.length = chart;
   }
 
-  // Word cloud
-  function chartWordCloud(elId, wordFreq, title) {
+  // Word cloud — combined self + partner
+  function chartWordCloud(elId) {
     const el = container.querySelector('#' + elId);
     if (!el) return;
     const chart = echarts.init(el);
-    // Filter out noise: emoji tags, system messages, single-char filler, very low freq
-    const filtered = Object.entries(wordFreq)
-      .filter(([w, v]) => {
-        if (v < 2) return false;                          // 至少出现 2 次
-        if (w.length < 2) return false;                    // 至少 2 个字符
-        if (STOPWORDS.has(w)) return false;
-        if (/^\[.+\]$/.test(w)) return false;              // [微笑] 等表情标签
-        if (/^(以上|以下是|系统|消息|图片|语音|视频|文件|链接|撤回|表情包)/.test(w)) return false;
-        if (/^\d+$/.test(w)) return false;                 // 纯数字
-        if (/^(哈|嘿|嗯|呃|额|噢|喔|哇|呀|啦|嘛|呐|哎|唉|嘻|呵)+$/.test(w)) return false;
-        return true;
-      })
-      .slice(0, 60)
-      .map(([name, value]) => ({ name, value: Math.log(value + 1) * 10 }));
-    if (filtered.length === 0) return;
+    const selfName = document.getElementById('selfName').value || '我';
+    const partnerName = document.getElementById('partnerName').value || '对方';
+
+    function filterWords(wordFreq, max) {
+      return Object.entries(wordFreq)
+        .filter(([w, v]) => {
+          if (v < 2) return false;
+          if (w.length < 2) return false;
+          if (STOPWORDS.has(w)) return false;
+          if (/^\[.+\]$/.test(w)) return false;
+          if (/^(以上|以下是|系统|消息|图片|语音|视频|文件|链接|撤回|表情包)/.test(w)) return false;
+          if (/^\d+$/.test(w)) return false;
+          if (/^(哈|嘿|嗯|呃|额|噢|喔|哇|呀|啦|嘛|呐|哎|唉|嘻|呵)+$/.test(w)) return false;
+          return true;
+        })
+        .slice(0, max)
+        .map(([name, value]) => ({ name, value: Math.log(value + 1) * 10 }));
+    }
+
+    const selfWords = filterWords(s.wordFreq, 40);
+    const partnerWords = STATE.stats.hasPartner && STATE.stats.partner
+      ? filterWords(STATE.stats.partner.wordFreq, 40) : [];
+
+    // Merge: self words in brown, partner words in teal
+    const BROWN = ['#8b5e3c','#c68642','#d4956a','#e8c49a'];
+    const TEAL  = ['#4a7b6f','#6faa9c','#8abfb8','#b4d8d2'];
+    const data = [
+      ...selfWords.map(w => ({ ...w, textStyle: { color: BROWN[Math.floor(Math.random()*BROWN.length)] } })),
+      ...partnerWords.map(w => ({ ...w, textStyle: { color: TEAL[Math.floor(Math.random()*TEAL.length)] } })),
+    ];
+    if (data.length === 0) return;
+
     chart.setOption({
       tooltip: { show: true },
-      title: { text: title, left: 'center', top: 6, textStyle: { fontSize: 14, color: theme.textColor } },
       series: [{
         type: 'wordCloud',
         shape: 'circle',
-        sizeRange: [14, 55],
+        sizeRange: [14, 60],
         rotationRange: [-45, 45],
         gridSize: 8,
         drawOutOfBound: false,
-        textStyle: {
-          fontFamily: 'PingFang SC, Microsoft YaHei, sans-serif',
-          fontWeight: 'normal',
-          color: () => ['#8b5e3c','#c68642','#d4956a','#e8c49a','#4a7b6f','#6faa9c','#8abfb8'][Math.floor(Math.random()*7)]
-        },
-        data: filtered
+        textStyle: { fontFamily: 'PingFang SC, Microsoft YaHei, sans-serif', fontWeight: 'normal' },
+        data
       }]
     });
     STATE.charts[elId] = chart;
@@ -859,14 +949,7 @@ function createCharts(containerId) {
   chartWeekday();
   chartLengthDist();
 
-  const selfName = document.getElementById('selfName').value || '我';
-  const partnerName = document.getElementById('partnerName').value || '对方';
-
-  chartWordCloud('chart-wc-self', s.wordFreq, `${selfName} 的高频词`);
-
-  if (STATE.stats.hasPartner && STATE.stats.partner) {
-    chartWordCloud('chart-wc-partner', STATE.stats.partner.wordFreq, `${partnerName} 的高频词`);
-  }
+  chartWordCloud('chart-wc');
 
   // Custom HTML/CSS heatmap (GitHub-style calendar grid)
   if (window._initHeatmap && Object.keys(s.daily).length > 0) {
@@ -1143,10 +1226,6 @@ function generateReportHTML() {
       <div id="chart-weekday" class="chart-cell"></div>
       <div id="chart-monthly" class="chart-cell"></div>
       <div id="chart-length" class="chart-cell"></div>
-    </div>
-    <div class="chart-grid" style="grid-template-columns:${hasPartner?'1fr 1fr':'1fr'}">
-      <div id="chart-wc-self" class="chart-cell-full"></div>
-      ${hasPartner ? '<div id="chart-wc-partner" class="chart-cell-full"></div>' : ''}
     </div>`;
 
   // Custom HTML/CSS heatmap (GitHub-style calendar grid)
@@ -1187,10 +1266,11 @@ function generateReportHTML() {
   <div class="stat"><div class="stat-num">${spanStr}</div><div class="stat-lbl">数据覆盖时长</div></div>
 </div>
 <div class="section" style="--i:2"><div class="section-title">📊 消息行为分析</div>${chartsHTML}</div>
-<div class="section" style="--i:3"><div class="section-title">📅 聊天频率热力图</div>${heatmapHTML}</div>
-${big5HTML ? `<div class="section" style="--i:4"><div class="section-title">🧠 大五人格分析 (Big Five)</div>${big5HTML}</div>` : ''}
-${mbtiHTML ? `<div class="section" style="--i:5"><div class="section-title">🔮 MBTI 推断</div>${mbtiHTML}</div>` : ''}
-${styleHTML ? `<div class="section" style="--i:6"><div class="section-title">✨ AI 对${hasDualAI?'你们':'你'}的总结</div>${styleHTML}</div>` : ''}
+<div class="section" style="--i:3"><div class="section-title">💬 高频词对比</div><div id="chart-wc" style="height:360px"></div></div>
+<div class="section" style="--i:4"><div class="section-title">📅 聊天频率热力图</div>${heatmapHTML}</div>
+${big5HTML ? `<div class="section" style="--i:5"><div class="section-title">🧠 大五人格分析 (Big Five)</div>${big5HTML}</div>` : ''}
+${mbtiHTML ? `<div class="section" style="--i:6"><div class="section-title">🔮 MBTI 推断</div>${mbtiHTML}</div>` : ''}
+${styleHTML ? `<div class="section" style="--i:7"><div class="section-title">✨ AI 对${hasDualAI?'你们':'你'}的总结</div>${styleHTML}</div>` : ''}
 ${reliability ? `<div style="font-size:.78em;color:var(--tx-400,#8a7a6a);text-align:center;padding:12px">📋 ${reliability}</div>` : ''}
 <div class="disc">⚠️ 本报告基于语言模式的统计推断，仅供娱乐与自我探索，不构成心理学诊断。<br>MBTI 信效度存在学术争议；Big Five 具有更强的研究支撑，但仍需谨慎解读。<div class="brand">🍪 姜饼探AI · Ginger Report v2.0</div></div>`;
 
