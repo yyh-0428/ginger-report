@@ -882,7 +882,7 @@ function createCharts(containerId) {
   }
 
   // Word cloud — combined self + partner
-  function chartWordCloud(elId) {
+  function chartWordCloud() {
     const selfName = document.getElementById('selfName').value || '我';
     const partnerName = document.getElementById('partnerName').value || '对方';
     const hasPartner = STATE.stats.hasPartner && STATE.stats.partner;
@@ -903,42 +903,59 @@ function createCharts(containerId) {
         .map(([name, value]) => ({ name, value: Math.log(value + 1) * 10 }));
     }
 
-    function renderOneCloud(containerId, wordFreq, name, colormap) {
-      const el = container.querySelector('#' + containerId);
-      if (!el) return;
-      const chart = echarts.init(el);
-      const words = filterWords(wordFreq, 50);
-      if (words.length === 0) {
-        el.innerHTML = '<div style="text-align:center;padding-top:100px;color:var(--tx-400);font-size:14px">词频数据不足</div>';
-        return;
-      }
-      chart.setOption({
-        title: { text: name + ' 的高频词', left: 'center', top: 6, textStyle: { fontSize: 13, fontWeight: 'bold', color: '#3a2a1a' } },
-        tooltip: { show: true },
-        series: [{
-          type: 'wordCloud',
-          shape: 'circle',
-          sizeRange: [12, 56],
-          rotationRange: [-45, 45],
-          gridSize: 8,
-          drawOutOfBound: false,
-          textStyle: { fontFamily: 'PingFang SC, Microsoft YaHei, sans-serif', fontWeight: 'normal' },
-          color: function() {
-            const colors = colormap;
-            return colors[Math.floor(Math.random() * colors.length)];
-          },
-          data: words
-        }]
-      });
-      STATE.charts[containerId] = chart;
-    }
-
     const BROWN = ['#8b5e3c','#c68642','#d4956a','#e8c49a'];
     const TEAL  = ['#4a7b6f','#6faa9c','#8abfb8','#b4d8d2'];
 
-    renderOneCloud('chart-wc-self', s.wordFreq, selfName, BROWN);
+    // Self word cloud
+    const selfEl = container.querySelector('#chart-wc-self');
+    if (selfEl) {
+      const selfChart = echarts.init(selfEl);
+      const selfWords = filterWords(s.wordFreq, 50);
+      if (selfWords.length > 0) {
+        selfChart.setOption({
+          title: { text: selfName + ' 的高频词', left: 'center', top: 4, textStyle: { fontSize: 13, fontWeight: 'bold', color: '#3a2a1a' } },
+          tooltip: { show: true },
+          series: [{
+            type: 'wordCloud',
+            shape: 'circle',
+            sizeRange: [12, 52],
+            rotationRange: [-45, 45],
+            gridSize: 6,
+            drawOutOfBound: false,
+            textStyle: { fontFamily: 'PingFang SC, Microsoft YaHei, sans-serif', fontWeight: 'normal' },
+            color: function() { return BROWN[Math.floor(Math.random() * BROWN.length)]; },
+            data: selfWords
+          }]
+        });
+        STATE.charts['wc-self'] = selfChart;
+      }
+    }
+
+    // Partner word cloud
     if (hasPartner) {
-      renderOneCloud('chart-wc-partner', STATE.stats.partner.wordFreq, partnerName, TEAL);
+      const partnerEl = container.querySelector('#chart-wc-partner');
+      if (partnerEl) {
+        const partnerChart = echarts.init(partnerEl);
+        const partnerWords = filterWords(STATE.stats.partner.wordFreq, 50);
+        if (partnerWords.length > 0) {
+          partnerChart.setOption({
+            title: { text: partnerName + ' 的高频词', left: 'center', top: 4, textStyle: { fontSize: 13, fontWeight: 'bold', color: '#3a2a1a' } },
+            tooltip: { show: true },
+            series: [{
+              type: 'wordCloud',
+              shape: 'circle',
+              sizeRange: [12, 52],
+              rotationRange: [-45, 45],
+              gridSize: 6,
+              drawOutOfBound: false,
+              textStyle: { fontFamily: 'PingFang SC, Microsoft YaHei, sans-serif', fontWeight: 'normal' },
+              color: function() { return TEAL[Math.floor(Math.random() * TEAL.length)]; },
+              data: partnerWords
+            }]
+          });
+          STATE.charts['wc-partner'] = partnerChart;
+        }
+      }
     } else {
       const partnerEl = container.querySelector('#chart-wc-partner');
       if (partnerEl) partnerEl.style.display = 'none';
@@ -1137,7 +1154,7 @@ function createCharts(containerId) {
   chartWeekday();
   chartLengthDist();
 
-  chartWordCloud('chart-wc');
+  chartWordCloud();
 
   // Custom HTML/CSS heatmap (GitHub-style calendar grid)
   if (window._initHeatmap && Object.keys(s.daily).length > 0) {
