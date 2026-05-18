@@ -1408,7 +1408,7 @@ ${samples.map(m => '• ' + m.content).join('\n')}
 
   const makeBody = (samples, name, isSelf) => ({
     model,
-    messages: [{ role: 'user', content: prompt(samples.length > 0 ? samples.map(m => m.content) : ['无充足数据'], name, isSelf) }],
+    messages: [{ role: 'user', content: prompt(samples.length > 0 ? samples : [{content:'无充足数据'}], name, isSelf) }],
     max_tokens: 2500,
     temperature: 0.7,
   });
