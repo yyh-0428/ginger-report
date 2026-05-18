@@ -611,8 +611,8 @@ function segmentChinese(text) {
 function computeStats() {
   if (!STATE.rawData) throw new Error('请先上传聊天数据');
 
-  const selfMsgs = STATE.rawData.self;
-  const partnerMsgs = STATE.rawData.partner;
+  const selfMsgs = STATE.rawData.self || [];
+  const partnerMsgs = STATE.rawData.partner || [];
   const allRaw = [...selfMsgs, ...partnerMsgs];
 
   if (selfMsgs.length < 5) throw new Error('自己消息数量不足（需要至少 5 条）');
@@ -767,6 +767,7 @@ function computeStats() {
 // ── 图表生成 (ECharts) ──────────────────────────────
 
 function createCharts(containerId) {
+  if (!STATE.stats) return;
   // Dispose old chart instances and clean up year switchers
   Object.values(STATE.charts).forEach(c => { try { c.dispose(); } catch {} });
   STATE.charts = {};
@@ -1337,11 +1338,12 @@ ${samples.map(m => '• ' + m.content).join('\n')}
 // ── 报告生成 ──────────────────────────────────────────
 
 function generateReportHTML() {
+  if (!STATE.stats) throw new Error('统计数据未初始化，请重新生成报告');
   const s = STATE.stats.self;
   const p = STATE.personality;
   const selfName = document.getElementById('selfName').value || '我';
   const partnerName = document.getElementById('partnerName').value || '对方';
-  const hasPartner = STATE.stats.hasPartner && STATE.stats.partner;
+  const hasPartner = !!(STATE.stats.hasPartner && STATE.stats.partner);
 
   const dr = s.timeRange;
   const days = dr ? Math.max(1, Math.round((dr.end - dr.start) / (1000*60*60*24))) : 0;
@@ -2021,10 +2023,10 @@ function updateProgress(pct, text) {
 
 function downloadReport() {
   const reportBody = document.getElementById('reportContent').innerHTML;
-  if (!reportBody) return;
+  if (!reportBody || !STATE.stats) return;
   const selfName = document.getElementById('selfName').value || '我';
   const partnerName = document.getElementById('partnerName').value || '对方';
-  const hasPartner = STATE.stats.hasPartner && STATE.stats.partner;
+  const hasPartner = !!(STATE.stats.hasPartner && STATE.stats.partner);
   const html = getFullReportHTML(reportBody, selfName, partnerName, hasPartner);
   const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
   const url = URL.createObjectURL(blob);
