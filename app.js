@@ -883,11 +883,9 @@ function createCharts(containerId) {
 
   // Word cloud — combined self + partner
   function chartWordCloud(elId) {
-    const el = container.querySelector('#' + elId);
-    if (!el) return;
-    const chart = echarts.init(el);
     const selfName = document.getElementById('selfName').value || '我';
     const partnerName = document.getElementById('partnerName').value || '对方';
+    const hasPartner = STATE.stats.hasPartner && STATE.stats.partner;
 
     function filterWords(wordFreq, max) {
       return Object.entries(wordFreq)
@@ -905,33 +903,46 @@ function createCharts(containerId) {
         .map(([name, value]) => ({ name, value: Math.log(value + 1) * 10 }));
     }
 
-    const selfWords = filterWords(s.wordFreq, 40);
-    const partnerWords = STATE.stats.hasPartner && STATE.stats.partner
-      ? filterWords(STATE.stats.partner.wordFreq, 40) : [];
+    function renderOneCloud(containerId, wordFreq, name, colormap) {
+      const el = container.querySelector('#' + containerId);
+      if (!el) return;
+      const chart = echarts.init(el);
+      const words = filterWords(wordFreq, 50);
+      if (words.length === 0) {
+        el.innerHTML = '<div style="text-align:center;padding-top:100px;color:var(--tx-400);font-size:14px">词频数据不足</div>';
+        return;
+      }
+      chart.setOption({
+        title: { text: name + ' 的高频词', left: 'center', top: 6, textStyle: { fontSize: 13, fontWeight: 'bold', color: '#3a2a1a' } },
+        tooltip: { show: true },
+        series: [{
+          type: 'wordCloud',
+          shape: 'circle',
+          sizeRange: [12, 56],
+          rotationRange: [-45, 45],
+          gridSize: 8,
+          drawOutOfBound: false,
+          textStyle: { fontFamily: 'PingFang SC, Microsoft YaHei, sans-serif', fontWeight: 'normal' },
+          color: function() {
+            const colors = colormap;
+            return colors[Math.floor(Math.random() * colors.length)];
+          },
+          data: words
+        }]
+      });
+      STATE.charts[containerId] = chart;
+    }
 
-    // Merge: self words in brown, partner words in teal
     const BROWN = ['#8b5e3c','#c68642','#d4956a','#e8c49a'];
     const TEAL  = ['#4a7b6f','#6faa9c','#8abfb8','#b4d8d2'];
-    const data = [
-      ...selfWords.map(w => ({ ...w, textStyle: { color: BROWN[Math.floor(Math.random()*BROWN.length)] } })),
-      ...partnerWords.map(w => ({ ...w, textStyle: { color: TEAL[Math.floor(Math.random()*TEAL.length)] } })),
-    ];
-    if (data.length === 0) return;
 
-    chart.setOption({
-      tooltip: { show: true },
-      series: [{
-        type: 'wordCloud',
-        shape: 'circle',
-        sizeRange: [14, 60],
-        rotationRange: [-45, 45],
-        gridSize: 8,
-        drawOutOfBound: false,
-        textStyle: { fontFamily: 'PingFang SC, Microsoft YaHei, sans-serif', fontWeight: 'normal' },
-        data
-      }]
-    });
-    STATE.charts[elId] = chart;
+    renderOneCloud('chart-wc-self', s.wordFreq, selfName, BROWN);
+    if (hasPartner) {
+      renderOneCloud('chart-wc-partner', STATE.stats.partner.wordFreq, partnerName, TEAL);
+    } else {
+      const partnerEl = container.querySelector('#chart-wc-partner');
+      if (partnerEl) partnerEl.style.display = 'none';
+    }
   }
 
   // Big5 radar
@@ -1551,7 +1562,7 @@ function generateReportHTML() {
   <div class="stat"><div class="stat-num">${spanStr}</div><div class="stat-lbl">数据覆盖时长</div></div>
 </div>
 <div class="section" style="--i:2"><div class="section-title">📊 消息行为分析</div>${chartsHTML}</div>
-<div class="section" style="--i:3"><div class="section-title">💬 高频词对比</div><div id="chart-wc" style="height:360px"></div></div>
+<div class="section" style="--i:3"><div class="section-title">💬 高频词对比</div><div class="chart-grid"><div id="chart-wc-self" class="chart-cell"></div><div id="chart-wc-partner" class="chart-cell"></div></div></div>
 <div class="section" style="--i:4"><div class="section-title">📅 聊天频率热力图</div>${heatmapHTML}</div>
 <div class="section" style="--i:5"><div class="section-title">⚡ 回复速度分析</div>${replyHTML}</div>
 <div class="section" style="--i:6"><div class="section-title">😊 情绪关键词</div>${emotionSection}</div>
