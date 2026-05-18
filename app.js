@@ -2222,8 +2222,13 @@ async function generateReport() {
         await analyzePersonality();
         // Regenerate report with AI data
         updateProgress(85, '正在整合 AI 分析结果...');
-        const newBody = generateReportHTML();
-        reportContent.innerHTML = newBody;
+        try {
+          const newBody = generateReportHTML();
+          reportContent.innerHTML = newBody;
+        } catch (genErr) {
+          console.error('报告生成失败:', genErr);
+          toast('⚠️ 报告生成出错：' + genErr.message);
+        }
         await sleep(200);
         createCharts('reportContent');
         await sleep(300);
