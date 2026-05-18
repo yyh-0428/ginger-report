@@ -10,36 +10,12 @@ const STATE = {
 
 // ── 中文停用词 ────────────────────────────────────────
 const STOPWORDS = new Set([
-  // 虚词 / 功能词
+  // 对齐 Python jieba 版本的停用词（仅保留虚词/功能词）
   '的','了','是','在','我','你','他','她','它','们','这','那','就','都','和','与',
   '但','也','很','有','没','不','一','个','上','对','说','好','要','么','啊','呢',
   '吧','哦','嗯','然后','所以','因为','如果','可以','还是','已经','什么','怎么',
   '为什么','就是','还有','其实','感觉','觉得','现在','时候','一个','这个','那个',
-  '一下','一起','一直','一样','一点','一些','知道','真的','看到','会','能','去',
-  '来','还','被','让','给','把','做','用','想','看','应该','之后','之前','不过',
-  '而且','但是','虽然','可是','好像','非常','比较','有点','挺','太','特别','最近',
-  '上次','今天','明天','昨天','的话','可能','需要','自己','比较','可能','应该',
-  '或者','以及','关于','通过','进行','开始','结束','这样','那样','怎样','多少',
-  '哪里','哪个','哪些','谁','几','每','各','任何','某些','所有','全部','其他',
-  '别的','另','再','又','也','才','刚','将','正','曾','已经','终于','始终','永远',
-  // 聊天高频无意义词
-  '嗯嗯','哈哈','哈哈哈','嘿嘿','呵呵','嘻嘻','哎呀','哎哟','天哪','哇塞',
-  '嗯哼','呃','额','噢','喔','哇','呀','啦','嘛','呐','哎','唉','嘻','嘿',
-  '好的','好吧','行','行吧','ok','OK','okay','Yes','No','no','yes',
-  '谢谢','感谢','抱歉','不好意思','对不起','没事','没关系','客气',
-  '请问','麻烦','帮忙','帮','拜托','打扰',
-  // 称呼 / 代词
-  '人家','咱们','大家','各位','亲','宝贝','亲爱的','哥哥','姐姐','弟弟','妹妹',
-  '先生','女士','老师','同学','朋友','兄弟','姐妹',
-  // 时间 / 量词
-  '分钟','小时','天','周','月','年','秒','次','回','遍','趟','下',
-  '块钱','元','角','分','万','亿','千','百','十',
-  '个','位','条','件','样','种','类','些','点','片','块','道','张','本','台','部',
-  // 标点 / 符号
-  '…','——','——','【','】','「','」','『','』','（','）','《','》',
-  // 常见无意义短语
-  '是不是','有没有','能不能','会不会','可不可以','要不要','对不对','好不好',
-  '怎么说','怎么办','什么时候','什么地方','什么东西','为什么呢',
+  '一下','一起','一直','一样','一点','一些',
 ]);
 
 // ── UI 交互 ──────────────────────────────────────────
@@ -534,40 +510,84 @@ const EMOJI_MAP = {
   ['[Grin]']:'😁',['[Smile]']:'😊',['[Laugh]']:'😂',['[Cry]']:'😢',['[Sob]']:'😭',
 };
 
-// ── 中文词典 (常见2-4字词) ────────────────────────────
+// ── 中文词典 (常见2-4字词，500+条) ─────────────────────
 const DICT = new Set([
-  // 2字高频词
+  // ── 2字高频核心词 ──
   '学习','考试','成绩','作业','老师','同学','学校','上课','放学','放假','复习','预习',
   '数学','语文','英语','化学','物理','生物','历史','地理','政治','音乐','美术','体育',
   '爸爸','妈妈','爷爷','奶奶','哥哥','姐姐','弟弟','妹妹','叔叔','阿姨','朋友','闺蜜',
   '喜欢','开心','难过','生气','害怕','担心','紧张','激动','失望','伤心','后悔','感动',
-  '谢谢','抱歉','对不起','不好意思','没事','客气','麻烦','帮忙','拜托','打扰',
+  '谢谢','抱歉','对不起','没事','客气','麻烦','帮忙','拜托','打扰',
   '吃饭','喝水','睡觉','起床','洗澡','出门','回家','上班','下班','加班','休息','运动',
   '聊天','说话','告诉','回答','解释','道歉','安慰','鼓励','支持','帮助','陪伴',
   '好看','漂亮','可爱','帅气','厉害','聪明','有趣','无聊','奇怪','搞笑','感人','温暖',
   '照片','视频','语音','表情','红包','转账','朋友圈','公众号','小程序','群聊',
   '明天','昨天','今天','后天','前天','早上','中午','下午','晚上','凌晨','周末','假期',
-  '分钟','小时','秒钟','一点','一些','一下','一直','一起','一样','一定','一般',
-  '真的','确实','当然','绝对','肯定','可能','也许','大概','应该','似乎','好像','仿佛',
+  '分钟','小时','秒钟','真的','确实','当然','绝对','肯定','可能','也许','大概','应该',
   '感觉','觉得','认为','相信','希望','期待','想象','回忆','忘记','记得','发现','注意',
   '开始','结束','继续','停止','放弃','坚持','尝试','努力','成功','失败','进步','退步',
   '手机','电脑','平板','耳机','充电','网络','信号','密码','账号','软件','应用',
   '奶茶','咖啡','饮料','零食','水果','蛋糕','火锅','烧烤','外卖','食堂','餐厅','超市',
   '衣服','裤子','鞋子','裙子','帽子','围巾','手套','外套','包包',
   '感冒','发烧','咳嗽','头疼','肚子','医院','吃药','打针','手术','住院','康复','健康',
-  // 3字词
+  // ── 2字情感/社交词 ──
+  '微笑','大笑','苦笑','冷笑','痛哭','流泪','叹气','拥抱','牵手','亲吻','撒娇','吃醋',
+  '想念','思念','牵挂','依赖','信任','尊重','理解','包容','体谅','迁就','忍让','妥协',
+  '承诺','誓言','约定','纪念','惊喜','浪漫','甜蜜','幸福','满足','安心','踏实','放心',
+  '孤独','寂寞','空虚','疲惫','烦躁','郁闷','委屈','心酸','心碎','绝望','崩溃','无奈',
+  '羡慕','嫉妒','骄傲','自卑','敏感','脆弱','坚强','勇敢','独立','自信','谦虚','诚实',
+  // ── 2字日常动作 ──
+  '走路','跑步','游泳','打球','唱歌','跳舞','画画','拍照','逛街','购物','旅游','出差',
+  '做饭','洗碗','打扫','整理','收拾','洗衣','晾衣','浇花','养猫','养狗','种花','钓鱼',
+  '看书','读报','写字','画画','弹琴','下棋','打牌','玩游戏','看电影','听歌','追剧',
+  '排队','等车','坐车','开车','骑车','堵车','晕车','加油','停车','导航','路线','机场',
+  '快递','包裹','签收','退货','下单','付款','收款','转账','充值','缴费','退款','发票',
+  // ── 2字名词/事物 ──
+  '天气','下雨','下雪','刮风','晴天','阴天','雾霾','台风','地震','洪水','干旱','雷电',
+  '春天','夏天','秋天','冬天','元旦','春节','元宵','清明','端午','中秋','国庆','除夕',
+  '生日','婚礼','葬礼','聚会','约会','面试','考试','竞赛','比赛','演出','展览','讲座',
+  '工资','房租','水电','账单','贷款','存款','理财','股票','基金','保险','税收','消费',
+  '爱情','亲情','友情','感情','情绪','心情','心态','性格','人格','气质','魅力','颜值',
+  '梦想','理想','目标','计划','安排','方案','策略','方法','技巧','经验','教训','智慧',
+  '知识','文化','教育','科学','技术','艺术','文学','哲学','宗教','历史','地理','天文',
+  '国家','社会','家庭','学校','公司','单位','社区','城市','乡村','地球','宇宙','世界',
+  // ── 2字状态/程度 ──
+  '严重','轻微','明显','模糊','清楚','简单','复杂','容易','困难','安全','危险','紧急',
+  '正常','异常','特别','普通','优秀','完美','糟糕','讨厌','喜欢','热爱','沉迷','厌倦',
+  '积极','消极','主动','被动','热情','冷淡','亲密','疏远','熟悉','陌生','自然','刻意',
+  '突然','忽然','逐渐','慢慢','立刻','马上','暂时','永久','偶尔','经常','总是','从来',
+  // ── 2字连接/逻辑 ──
+  '虽然','但是','因此','不过','然而','而且','另外','同时','否则','既然','尽管','除非',
+  '关于','对于','至于','根据','按照','通过','经过','利用','采取','进行','实现','达到',
+  // ── 3字词 ──
   '不好意思','没关系','不知道','真的吗','为什么','怎么办','还可以','差不多',
   '哈哈哈','嘿嘿嘿','嗯嗯嗯','好好好','对对对','加油啊','辛苦了','早点睡','晚安啦',
   '想你了','想见你','想回家','想出去','想吃啥','想干嘛',
   '开心啊','好看啊','漂亮啊','可爱啊','厉害啊','聪明啊',
   '谢谢啊','没事的','别担心','吃饭了','睡觉了','起床了','出门了','回家了','到家了',
-  '拍照片','发红包','朋友圈','公众号','聊天记录',
-  // 4字词
+  '拍照片','发红包','朋友圈','聊天记录',
+  '小可爱','小宝贝','小傻瓜','小笨蛋','小仙女','小哥哥','小姐姐','小弟弟','小妹妹',
+  '怎么了','真的吗','好的呀','可以啊','没问题','当然啦','随便你','无所谓','不知道',
+  '太好了','太棒了','太厉害','太可爱','太漂亮','太搞笑','太感动','太温暖','太委屈',
+  '有点累','有点饿','有点冷','有点热','有点困','有点烦','有点忙','有点想','有点怕',
+  '不要了','别说了','别问了','别闹了','别生气','别难过','别担心','别着急','别客气',
+  '好开心','好难过','好想你','好喜欢','好漂亮','好厉害','好聪明','好有趣','好温暖',
+  '在一起','分手吧','我爱你','我想你','对不起','谢谢你','不客气','没关系','打扰了',
+  // ── 4字词 ──
   '真的不好意思','没有没有','加油加油','辛苦辛苦',
   '晚安晚安','好好学习','天天向上','努力加油','坚持下去','继续加油',
   '生日快乐','新年快乐','节日快乐','恭喜发财','万事如意','心想事成',
   '一路顺风','注意安全','注意身体','好好休息','好好吃饭',
   '开开心心','快快乐乐','平平安安','健健康康','顺顺利利',
+  '不好意思','不知道的','没必要的','应该的啦','随便你啦','无所谓啦',
+  '想你了呢','好想你呢','好喜欢你','超级喜欢','特别喜欢','非常喜欢',
+  '晚安好梦','好梦成真','心想事成','万事顺意','天天开心','永远幸福',
+  '么么哒','哈哈哈','嘿嘿嘿','嘻嘻嘻','咯咯咯','呜呜呜','嘤嘤嘤',
+  // ── 5字+常用短语 ──
+  '我好想你','我真的好想','你在哪里','你在干嘛','你在干什么','你在忙吗',
+  '吃了吗','吃了没','睡了吗','睡了没','到家了吗','到家了没',
+  '好的好的','嗯嗯好的','收到收到','了解了解','可以可以','没问题的',
+  '我爱你哦','我想你哦','么么哒哦','晚安哦','早安哦','拜拜哦',
 ]);
 
 // ── 中文分词 (词典优先 + N-gram) ─────────────────────
@@ -611,8 +631,8 @@ function segmentChinese(text) {
 function computeStats() {
   if (!STATE.rawData) throw new Error('请先上传聊天数据');
 
-  const selfMsgs = STATE.rawData.self;
-  const partnerMsgs = STATE.rawData.partner;
+  const selfMsgs = STATE.rawData.self || [];
+  const partnerMsgs = STATE.rawData.partner || [];
   const allRaw = [...selfMsgs, ...partnerMsgs];
 
   if (selfMsgs.length < 5) throw new Error('自己消息数量不足（需要至少 5 条）');
@@ -747,6 +767,7 @@ function computeStats() {
     return result;
   }
   const selfEmotion = countEmotion(selfText);
+  const hasPartner = !!partnerStats;
   const partnerEmotion = hasPartner ? countEmotion(partnerMsgs.map(m => m.content)) : null;
 
   STATE.stats = {
@@ -766,6 +787,7 @@ function computeStats() {
 // ── 图表生成 (ECharts) ──────────────────────────────
 
 function createCharts(containerId) {
+  if (!STATE.stats) return;
   // Dispose old chart instances and clean up year switchers
   Object.values(STATE.charts).forEach(c => { try { c.dispose(); } catch {} });
   STATE.charts = {};
@@ -880,56 +902,79 @@ function createCharts(containerId) {
   }
 
   // Word cloud — combined self + partner
-  function chartWordCloud(elId) {
-    const el = container.querySelector('#' + elId);
-    if (!el) return;
-    const chart = echarts.init(el);
+  function chartWordCloud() {
     const selfName = document.getElementById('selfName').value || '我';
     const partnerName = document.getElementById('partnerName').value || '对方';
+    const hasPartner = STATE.stats.hasPartner && STATE.stats.partner;
 
     function filterWords(wordFreq, max) {
       return Object.entries(wordFreq)
         .filter(([w, v]) => {
-          if (v < 2) return false;
           if (w.length < 2) return false;
           if (STOPWORDS.has(w)) return false;
-          if (/^\[.+\]$/.test(w)) return false;
-          if (/^(以上|以下是|系统|消息|图片|语音|视频|文件|链接|撤回|表情包)/.test(w)) return false;
-          if (/^\d+$/.test(w)) return false;
-          if (/^(哈|嘿|嗯|呃|额|噢|喔|哇|呀|啦|嘛|呐|哎|唉|嘻|呵)+$/.test(w)) return false;
           return true;
         })
         .slice(0, max)
         .map(([name, value]) => ({ name, value: Math.log(value + 1) * 10 }));
     }
 
-    const selfWords = filterWords(s.wordFreq, 40);
-    const partnerWords = STATE.stats.hasPartner && STATE.stats.partner
-      ? filterWords(STATE.stats.partner.wordFreq, 40) : [];
-
-    // Merge: self words in brown, partner words in teal
     const BROWN = ['#8b5e3c','#c68642','#d4956a','#e8c49a'];
     const TEAL  = ['#4a7b6f','#6faa9c','#8abfb8','#b4d8d2'];
-    const data = [
-      ...selfWords.map(w => ({ ...w, textStyle: { color: BROWN[Math.floor(Math.random()*BROWN.length)] } })),
-      ...partnerWords.map(w => ({ ...w, textStyle: { color: TEAL[Math.floor(Math.random()*TEAL.length)] } })),
-    ];
-    if (data.length === 0) return;
 
-    chart.setOption({
-      tooltip: { show: true },
-      series: [{
-        type: 'wordCloud',
-        shape: 'circle',
-        sizeRange: [14, 60],
-        rotationRange: [-45, 45],
-        gridSize: 8,
-        drawOutOfBound: false,
-        textStyle: { fontFamily: 'PingFang SC, Microsoft YaHei, sans-serif', fontWeight: 'normal' },
-        data
-      }]
-    });
-    STATE.charts[elId] = chart;
+    // Self word cloud
+    const selfEl = container.querySelector('#chart-wc-self');
+    if (selfEl) {
+      const selfChart = echarts.init(selfEl);
+      const selfWords = filterWords(s.wordFreq, 50);
+      if (selfWords.length > 0) {
+        selfChart.setOption({
+          title: { text: selfName + ' 的高频词', left: 'center', top: 4, textStyle: { fontSize: 13, fontWeight: 'bold', color: '#3a2a1a' } },
+          tooltip: { show: true },
+          series: [{
+            type: 'wordCloud',
+            shape: 'circle',
+            sizeRange: [12, 52],
+            rotationRange: [-45, 45],
+            gridSize: 6,
+            drawOutOfBound: false,
+            textStyle: { fontFamily: 'PingFang SC, Microsoft YaHei, sans-serif', fontWeight: 'normal' },
+            color: function() { return BROWN[Math.floor(Math.random() * BROWN.length)]; },
+            data: selfWords
+          }]
+        });
+        STATE.charts['wc-self'] = selfChart;
+      }
+    }
+
+    // Partner word cloud
+    if (hasPartner) {
+      const partnerEl = container.querySelector('#chart-wc-partner');
+      if (partnerEl) {
+        const partnerChart = echarts.init(partnerEl);
+        const partnerWords = filterWords(STATE.stats.partner.wordFreq, 50);
+        if (partnerWords.length > 0) {
+          partnerChart.setOption({
+            title: { text: partnerName + ' 的高频词', left: 'center', top: 4, textStyle: { fontSize: 13, fontWeight: 'bold', color: '#3a2a1a' } },
+            tooltip: { show: true },
+            series: [{
+              type: 'wordCloud',
+              shape: 'circle',
+              sizeRange: [12, 52],
+              rotationRange: [-45, 45],
+              gridSize: 6,
+              drawOutOfBound: false,
+              textStyle: { fontFamily: 'PingFang SC, Microsoft YaHei, sans-serif', fontWeight: 'normal' },
+              color: function() { return TEAL[Math.floor(Math.random() * TEAL.length)]; },
+              data: partnerWords
+            }]
+          });
+          STATE.charts['wc-partner'] = partnerChart;
+        }
+      }
+    } else {
+      const partnerEl = container.querySelector('#chart-wc-partner');
+      if (partnerEl) partnerEl.style.display = 'none';
+    }
   }
 
   // Big5 radar
@@ -1124,7 +1169,7 @@ function createCharts(containerId) {
   chartWeekday();
   chartLengthDist();
 
-  chartWordCloud('chart-wc');
+  chartWordCloud();
 
   // Custom HTML/CSS heatmap (GitHub-style calendar grid)
   if (window._initHeatmap && Object.keys(s.daily).length > 0) {
@@ -1336,11 +1381,12 @@ ${samples.map(m => '• ' + m.content).join('\n')}
 // ── 报告生成 ──────────────────────────────────────────
 
 function generateReportHTML() {
+  if (!STATE.stats) throw new Error('统计数据未初始化，请重新生成报告');
   const s = STATE.stats.self;
   const p = STATE.personality;
   const selfName = document.getElementById('selfName').value || '我';
   const partnerName = document.getElementById('partnerName').value || '对方';
-  const hasPartner = STATE.stats.hasPartner && STATE.stats.partner;
+  const hasPartner = !!(STATE.stats.hasPartner && STATE.stats.partner);
 
   const dr = s.timeRange;
   const days = dr ? Math.max(1, Math.round((dr.end - dr.start) / (1000*60*60*24))) : 0;
@@ -1548,7 +1594,7 @@ function generateReportHTML() {
   <div class="stat"><div class="stat-num">${spanStr}</div><div class="stat-lbl">数据覆盖时长</div></div>
 </div>
 <div class="section" style="--i:2"><div class="section-title">📊 消息行为分析</div>${chartsHTML}</div>
-<div class="section" style="--i:3"><div class="section-title">💬 高频词对比</div><div id="chart-wc" style="height:360px"></div></div>
+<div class="section" style="--i:3"><div class="section-title">💬 高频词对比</div><div class="chart-grid"><div id="chart-wc-self" class="chart-cell"></div><div id="chart-wc-partner" class="chart-cell"></div></div></div>
 <div class="section" style="--i:4"><div class="section-title">📅 聊天频率热力图</div>${heatmapHTML}</div>
 <div class="section" style="--i:5"><div class="section-title">⚡ 回复速度分析</div>${replyHTML}</div>
 <div class="section" style="--i:6"><div class="section-title">😊 情绪关键词</div>${emotionSection}</div>
@@ -1561,7 +1607,7 @@ ${reliability ? `<div style="font-size:.78em;color:var(--tx-400,#8a7a6a);text-al
   return bodyHTML;
 }
 
-function getFullReportHTML(bodyHTML, selfName, partnerName, hasPartner) {
+function getFullReportHTML(bodyHTML, selfName, partnerName, hasPartner, chartData) {
   const STYLES = `
 /* ── OKLCH Design Tokens ──────────────────────────── */
 :root {
@@ -1912,13 +1958,113 @@ body {
   .bf-track-right   { width: 72px; }
   .mbti-type-badge  { font-size: 1.75rem; letter-spacing: 3px; }
 }`;
+  const chartScript = chartData ? `
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  var D = ${JSON.stringify(chartData)};
+  var BROWN = ['#8b5e3c','#c68642','#d4956a','#e8c49a'];
+  var TEAL  = ['#4a7b6f','#6faa9c','#8abfb8','#b4d8d2'];
+  var theme = { textColor: '#5a4a3a', accent: '#c68642', brown: '#8b5e3c', teal: '#6faa9c' };
+
+  function initChart(id, opt) {
+    var el = document.getElementById(id);
+    if (!el) return null;
+    var c = echarts.init(el);
+    c.setOption(opt);
+    return c;
+  }
+
+  // Hourly
+  var peak = D.hourly.indexOf(Math.max.apply(null, D.hourly));
+  initChart('chart-hourly', {
+    tooltip: { trigger: 'axis' },
+    grid: { top: 40, right: 20, bottom: 30, left: 50 },
+    title: { text: '几点最爱发消息？', left: 'center', top: 8, textStyle: { fontSize: 14, color: theme.textColor } },
+    xAxis: { type: 'category', data: Array.from({length:24},function(_,i){return i+':00'}), axisLabel: { rotate: 45, fontSize: 10, interval: 3 } },
+    yAxis: { type: 'value', name: '消息数' },
+    series: [{ type: 'bar', data: D.hourly.map(function(v,i){return {value:v,itemStyle:{color:i===peak?theme.accent:theme.brown,borderRadius:[4,4,0,0]}}}), markArea: { silent: true, data: [[{xAxis:'0:00'},{xAxis:'6:00',itemStyle:{color:'rgba(0,0,50,.04)'}}],[{xAxis:'22:00'},{xAxis:'23:00',itemStyle:{color:'rgba(0,0,50,.04)'}}]] } }]
+  });
+
+  // Monthly
+  var months = Object.keys(D.monthly).sort();
+  initChart('chart-monthly', {
+    tooltip: { trigger: 'axis' },
+    grid: { top: 40, right: 20, bottom: 30, left: 50 },
+    title: { text: '每月消息量变化', left: 'center', top: 8, textStyle: { fontSize: 14, color: theme.textColor } },
+    xAxis: { type: 'category', data: months, axisLabel: { rotate: 45, fontSize: 10 } },
+    yAxis: { type: 'value', name: '消息数' },
+    series: [{ type: 'line', data: months.map(function(k){return D.monthly[k]}), lineStyle: { color: theme.brown, width: 2 }, itemStyle: { color: theme.brown }, areaStyle: { color: 'rgba(139,94,60,.12)' }, smooth: true }]
+  });
+
+  // Weekday
+  var days = ['周一','周二','周三','周四','周五','周六','周日'];
+  initChart('chart-weekday', {
+    tooltip: { trigger: 'axis' },
+    grid: { top: 40, right: 20, bottom: 30, left: 50 },
+    title: { text: '哪天最活跃？', left: 'center', top: 8, textStyle: { fontSize: 14, color: theme.textColor } },
+    xAxis: { type: 'category', data: days },
+    yAxis: { type: 'value', name: '消息数' },
+    series: [{ type: 'bar', data: D.weekday.map(function(v,i){return {value:v,itemStyle:{color:i>=5?theme.accent:theme.brown,borderRadius:[4,4,0,0]}}}) }]
+  });
+
+  // Length distribution
+  var clamped = D.lengths.map(function(l){return Math.min(l,200)});
+  var bins = 30, maxV = Math.max.apply(null,clamped.concat([1])), step = maxV/bins;
+  var dist = new Array(bins).fill(0);
+  clamped.forEach(function(l){var idx=Math.min(Math.floor(l/step),bins-1);dist[idx]++});
+  initChart('chart-length', {
+    tooltip: { trigger: 'axis' },
+    grid: { top: 40, right: 20, bottom: 30, left: 50 },
+    title: { text: '消息长度分布', left: 'center', top: 8, textStyle: { fontSize: 14, color: theme.textColor } },
+    xAxis: { type: 'category', data: Array.from({length:bins},function(_,i){return Math.round(i*step)}), axisLabel: { fontSize: 9, interval: 4 } },
+    yAxis: { type: 'value', name: '条数' },
+    series: [{ type: 'bar', data: dist, itemStyle: { color: theme.brown, borderRadius: [3,3,0,0] }, markLine: { silent: true, data: [{ xAxis: Math.round(D.avgLength/step), label: { formatter: '平均 '+D.avgLength+'字', color: theme.accent }, lineStyle: { color: theme.accent, type: 'dashed' } }] } }]
+  });
+
+  // Word clouds
+  function filterWords(wf, max) {
+    return Object.entries(wf).filter(function(e){return e[0].length>=2}).slice(0,max).map(function(e){return {name:e[0],value:Math.log(e[1]+1)*10}});
+  }
+  var selfEl = document.getElementById('chart-wc-self');
+  if (selfEl && D.selfWords && D.selfWords.length) {
+    var sc = echarts.init(selfEl);
+    sc.setOption({
+      title: { text: D.selfName+' 的高频词', left: 'center', top: 4, textStyle: { fontSize: 13, fontWeight: 'bold', color: '#3a2a1a' } },
+      tooltip: { show: true },
+      series: [{ type: 'wordCloud', shape: 'circle', sizeRange: [12, 52], rotationRange: [-45, 45], gridSize: 6, drawOutOfBound: false, textStyle: { fontFamily: 'PingFang SC, Microsoft YaHei, sans-serif' }, color: function(){return BROWN[Math.floor(Math.random()*BROWN.length)]}, data: D.selfWords }]
+    });
+  }
+  if (D.hasPartner) {
+    var partnerEl = document.getElementById('chart-wc-partner');
+    if (partnerEl && D.partnerWords && D.partnerWords.length) {
+      var pc = echarts.init(partnerEl);
+      pc.setOption({
+        title: { text: D.partnerName+' 的高频词', left: 'center', top: 4, textStyle: { fontSize: 13, fontWeight: 'bold', color: '#3a2a1a' } },
+        tooltip: { show: true },
+        series: [{ type: 'wordCloud', shape: 'circle', sizeRange: [12, 52], rotationRange: [-45, 45], gridSize: 6, drawOutOfBound: false, textStyle: { fontFamily: 'PingFang SC, Microsoft YaHei, sans-serif' }, color: function(){return TEAL[Math.floor(Math.random()*TEAL.length)]}, data: D.partnerWords }]
+      });
+    }
+  } else {
+    var pe = document.getElementById('chart-wc-partner');
+    if (pe) pe.style.display = 'none';
+  }
+
+  window.addEventListener('resize', function() {
+    document.querySelectorAll('[id^=chart-]').forEach(function(el) {
+      var inst = echarts.getInstanceByDom(el);
+      if (inst) inst.resize();
+    });
+  });
+});
+<\/script>` : '';
+
   return `<!DOCTYPE html><html lang="zh"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>微信聊天人格分析 · ${selfName}${hasPartner ? ' & ' + partnerName : ''}</title>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"><\/script>
 <script src="https://cdn.jsdelivr.net/npm/echarts-wordcloud@2.1.0/dist/echarts-wordcloud.min.js"><\/script>
 <style>${STYLES}</style></head><body><div class="container">
 ${bodyHTML}
-</div></body></html>`;
+</div>${chartScript}</body></html>`;
 }
 
 // ── 主流程 ────────────────────────────────────────────
@@ -2020,11 +2166,32 @@ function updateProgress(pct, text) {
 
 function downloadReport() {
   const reportBody = document.getElementById('reportContent').innerHTML;
-  if (!reportBody) return;
+  if (!reportBody || !STATE.stats) return;
   const selfName = document.getElementById('selfName').value || '我';
   const partnerName = document.getElementById('partnerName').value || '对方';
-  const hasPartner = STATE.stats.hasPartner && STATE.stats.partner;
-  const html = getFullReportHTML(reportBody, selfName, partnerName, hasPartner);
+  const hasPartner = !!(STATE.stats.hasPartner && STATE.stats.partner);
+  const s = STATE.stats.self;
+
+  // Prepare chart data for standalone rendering
+  const STOPWORDS_DL = new Set(['的','了','是','在','我','你','他','她','它','们','这','那','就','都','和','与','但','也','很','有','没','不','一','个','上','对','说','好','要','么','啊','呢','吧','哦','嗯','然后','所以','因为','如果','可以','还是','已经','什么','怎么','为什么','就是','还有','其实','感觉','觉得','现在','时候','一个','这个','那个','一下','一起','一直','一样','一点','一些']);
+  function fw(wf, max) {
+    return Object.entries(wf).filter(([w]) => w.length >= 2 && !STOPWORDS_DL.has(w)).slice(0, max).map(([name, value]) => ({ name, value: Math.log(value + 1) * 10 }));
+  }
+
+  const chartData = {
+    hourly: s.hourly,
+    monthly: s.monthly,
+    weekday: s.weekday,
+    lengths: s.lengths,
+    avgLength: s.avgLength,
+    selfWords: fw(s.wordFreq, 50),
+    partnerWords: hasPartner ? fw(STATE.stats.partner.wordFreq, 50) : [],
+    selfName,
+    partnerName,
+    hasPartner,
+  };
+
+  const html = getFullReportHTML(reportBody, selfName, partnerName, hasPartner, chartData);
   const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
