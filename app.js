@@ -1468,6 +1468,7 @@ ${samples.map(m => '• ' + m.content).join('\n')}
   }
 
   STATE.personality = { self: selfPersonality, partner: partnerPersonality };
+  console.log('AI 分析结果:', JSON.stringify(STATE.personality, null, 2));
   updateProgress(80, 'AI 分析完成！');
 }
 
@@ -1491,6 +1492,7 @@ function generateReportHTML() {
   const style = p?.self?.style || null;
   const hasAI = !!p?.self;
   const hasDualAI = hasAI && !!p?.partner?.big5;
+  console.log('报告生成 - p:', p, 'big5:', !!big5, 'mbti:', !!mbti, 'style:', !!style, 'hasAI:', hasAI, 'hasDualAI:', hasDualAI);
 
   // Helper: tag pill
   const tag = (name, isPartner) => `<span class="${isPartner?'tag-partner':'tag-self'}"><span class="tag-av">${name.charAt(0)}</span>${name}</span>`;
