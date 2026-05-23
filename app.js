@@ -230,16 +230,17 @@ function parseCSV(raw) {
     let ts;
     if (colMap.ts !== undefined && cols[colMap.ts]) {
       const v = cols[colMap.ts].trim();
-      ts = /^\d+$/.test(v) ? parseInt(v) : new Date(v).getTime() / 1000;
+      ts = /^\d+$/.test(v) ? parseInt(v, 10) : new Date(v).getTime() / 1000;
+      if (ts && ts > 1e12) ts = Math.round(ts / 1000);
     }
 
-    if (colMap.type !== undefined) {
+    if (colMap.type !== undefined && cols[colMap.type]) {
       const t = cols[colMap.type].trim();
       if (t && t !== '1' && t !== 'text') continue;
     }
 
     let isSenderRaw = null;
-    if (colMap.isSender !== undefined) {
+    if (colMap.isSender !== undefined && cols[colMap.isSender]) {
       const v = cols[colMap.isSender].trim();
       isSenderRaw = v === '1' || v === 'true' || v === '我' || /self|me/i.test(v);
       if (isSenderRaw) hasIsSender = true;
@@ -321,11 +322,13 @@ function parseJSON(raw) {
     if (!content) continue;
 
     let ts;
-    if (m.timestamp) ts = /^\d{10,13}$/.test(String(m.timestamp)) ? parseInt(m.timestamp) : new Date(m.timestamp).getTime() / 1000;
+    if (m.timestamp) ts = /^\d{10,13}$/.test(String(m.timestamp)) ? parseInt(m.timestamp, 10) : new Date(m.timestamp).getTime() / 1000;
     else if (m.time) ts = new Date(m.time).getTime() / 1000;
     else if (m.datetime) ts = new Date(m.datetime).getTime() / 1000;
-    else if (m.create_time) ts = parseInt(m.create_time);
-    else if (m.ts) ts = parseInt(m.ts);
+    else if (m.create_time) ts = parseInt(m.create_time, 10);
+    else if (m.ts) ts = parseInt(m.ts, 10);
+    // Normalize millisecond timestamps to seconds
+    if (ts && ts > 1e12) ts = Math.round(ts / 1000);
 
     const senderName = m.display_name || m.sender_name || m.senderName || m.name || '';
     const isSenderRaw = m.is_sender;
@@ -392,7 +395,7 @@ function parseTXT(raw) {
       if (m) {
         const sender = m[1].trim();
         const content = cleanMessage(m[2].trim());
-        if (!content) break;
+        if (!content) { matched = true; break; }
         allRows.push({ content, senderName: sender, ts: null });
         if (sender) senderNames.add(sender);
         matched = true;
@@ -506,7 +509,7 @@ const EMOJI_MAP = {
   Shy:'🙈',Embarrassed:'😳',Sneaky:'🤭',Insidious:'😏',Trick:'😜',
   Clap:'👏',Wave:'👋',Pray:'🙏',ThumbsUp:'👍',ThumbsDown:'👎',Ok:'👌',Victory:'✌️',Salute:'🫡',Fist:'✊',Muscle:'💪',Handshake:'🤝',Hug:'🤗',
   Drool:'🤤',Vomit:'🤮',Sick:'🤒',Flower:'🌹',Heart:'❤️',BrokenHeart:'💔',Star:'⭐',Fire:'🔥',Ghost:'👻',Poop:'💩',
-  Kneeling:'🧎',Worship:'🙇',Facepalm:'🤦',Shrug:'🤷',Strong:'💪',Ok:'👌',Triumph:'😤',
+  Kneeling:'🧎',Worship:'🙇',Facepalm:'🤦',Shrug:'🤷',Strong:'💪',Punch:'👊',Triumph:'😤',
   ['[Grin]']:'😁',['[Smile]']:'😊',['[Laugh]']:'😂',['[Cry]']:'😢',['[Sob]']:'😭',
 };
 
@@ -726,7 +729,6 @@ function computeStats() {
 
   const selfMsgs = STATE.rawData.self || [];
   const partnerMsgs = STATE.rawData.partner || [];
-  const allRaw = [...selfMsgs, ...partnerMsgs];
 
   if (selfMsgs.length < 5) throw new Error('自己消息数量不足（需要至少 5 条）');
 
@@ -770,7 +772,7 @@ function computeStats() {
   });
 
   const lengths = selfText.map(t => t.length);
-  const avgLength = Math.round(lengths.reduce((a, b) => a + b, 0) / lengths.length);
+  const avgLength = lengths.length > 0 ? Math.round(lengths.reduce((a, b) => a + b, 0) / lengths.length) : 0;
 
   // ── Partner stats ──
   let partnerStats = null;
@@ -847,7 +849,7 @@ function computeStats() {
   // ── Emotion keywords ──
   const EMO = {
     positive: ['开心','快乐','高兴','喜欢','爱','感谢','谢谢','棒','好','厉害','漂亮','可爱','有趣','幸福','满足','期待','感动','温暖','甜蜜','兴奋','哈哈','嘿嘿'],
-    negative: ['难过','伤心','生气','害怕','担心','紧张','失望','后悔','烦','累','无聊','孤独','焦虑','痛苦','讨厌','累','困','头疼','崩溃','无语','尴尬'],
+    negative: ['难过','伤心','生气','害怕','担心','紧张','失望','后悔','烦','累','无聊','孤独','焦虑','痛苦','讨厌','困','头疼','崩溃','无语','尴尬'],
     question: ['吗','呢','什么','怎么','为什么','哪','谁','几','是否'],
   };
   function countEmotion(texts) {
@@ -881,12 +883,16 @@ function computeStats() {
 
 function createCharts(containerId) {
   if (!STATE.stats) return;
-  // Dispose old chart instances and clean up year switchers
+  // Dispose old chart instances and clean up
   Object.values(STATE.charts).forEach(c => { try { c.dispose(); } catch {} });
   STATE.charts = {};
+  // Remove stale heatmap tooltip to prevent listener leaks
+  const oldTip = document.querySelector('.hm-tip');
+  if (oldTip) oldTip.remove();
 
   const s = STATE.stats.self;
   const container = document.getElementById(containerId);
+  if (!container) return;
   const theme = { textColor: '#5a4a3a', accent: '#c68642', brown: '#8b5e3c', teal: '#6faa9c' };
 
   // Clean up stale year switchers from previous renders
@@ -1273,37 +1279,33 @@ function createCharts(containerId) {
 // ── AI 人格分析 ──────────────────────────────────────
 
 async function streamAIRequest(endpoint, headers, body, onChunk, maxRetries = 2) {
+  // Build URL list: direct first, then proxies
+  const proxy = document.getElementById('corsProxy')?.value?.trim() || '';
+  const urls = [endpoint];
+  if (proxy) urls.push(proxy + endpoint);
+
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const url = urls[attempt % urls.length];
+
+    // Try streaming
     try {
-      const resp = await fetch(endpoint, {
+      const resp = await fetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify({ ...body, stream: true }),
       });
-
-      if (!resp.ok) {
-        const errText = await resp.text();
-        if (attempt < maxRetries) {
-          onChunk(`\n[重试 ${attempt + 1}/${maxRetries}：API 返回 ${resp.status}]`);
-          await sleep(1000 * (attempt + 1));
-          continue;
-        }
-        throw new Error(`AI API 错误 (${resp.status}): ${errText.substring(0, 200)}`);
-      }
-
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      if (!resp.body) throw new Error('响应体为空（可能是 CORS 问题）');
       const reader = resp.body.getReader();
       const decoder = new TextDecoder();
       let fullContent = '';
       let buffer = '';
-
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
-
         const lines = buffer.split('\n');
         buffer = lines.pop() || '';
-
         for (const line of lines) {
           const trimmed = line.trim();
           if (!trimmed || !trimmed.startsWith('data:')) continue;
@@ -1312,21 +1314,36 @@ async function streamAIRequest(endpoint, headers, body, onChunk, maxRetries = 2)
           try {
             const chunk = JSON.parse(data);
             const delta = chunk.choices?.[0]?.delta?.content || '';
-            if (delta) {
-              fullContent += delta;
-              onChunk(delta);
-            }
+            if (delta) { fullContent += delta; onChunk(delta); }
           } catch {}
         }
       }
       return fullContent;
-    } catch (err) {
+    } catch (_) {}
+
+    // Try non-streaming
+    try {
+      onChunk('\n[切换非流式模式...]');
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ ...body, stream: false }),
+      });
+      if (!resp.ok) {
+        const errText = await resp.text();
+        throw new Error(`HTTP ${resp.status}: ${errText.substring(0, 200)}`);
+      }
+      const result = await resp.json();
+      const content = result.choices?.[0]?.message?.content || '';
+      if (content) { onChunk(content); return content; }
+      throw new Error('AI 返回内容为空');
+    } catch (fallbackErr) {
       if (attempt < maxRetries) {
-        onChunk(`\n[重试 ${attempt + 1}/${maxRetries}：${err.message}]`);
+        onChunk(`\n[重试 ${attempt + 1}/${maxRetries}：${fallbackErr.message}]`);
         await sleep(1000 * (attempt + 1));
         continue;
       }
-      throw err;
+      throw fallbackErr;
     }
   }
 }
@@ -1432,13 +1449,34 @@ ${samples.map(m => '• ' + m.content).join('\n')}
     throw err;
   }
 
-  const jsonMatch = selfContent.match(/\{[\s\S]*\}/);
+  // Extract JSON — handle markdown code blocks, extra text, etc.
+  let jsonStr = selfContent;
+  // Try extracting from ```json ... ``` code blocks first
+  const codeBlockMatch = selfContent.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
+  if (codeBlockMatch) {
+    jsonStr = codeBlockMatch[1];
+  } else {
+    // Try finding the first { ... } block (non-greedy)
+    const braceMatch = selfContent.match(/\{[\s\S]*?\}/);
+    if (braceMatch) jsonStr = braceMatch[0];
+  }
   let selfPersonality;
   try {
-    selfPersonality = JSON.parse(jsonMatch ? jsonMatch[0] : selfContent);
-  } catch {
-    if (streamEl) streamEl.style.display = 'none';
-    throw new Error('AI 返回的 JSON 解析失败');
+    selfPersonality = JSON.parse(jsonStr);
+  } catch (parseErr) {
+    // Last resort: brace-counting to extract outermost {...}
+    let depth = 0, start = -1;
+    for (let i = 0; i < selfContent.length; i++) {
+      if (selfContent[i] === '{') { if (depth === 0) start = i; depth++; }
+      else if (selfContent[i] === '}') { depth--; if (depth === 0 && start >= 0) {
+        try { selfPersonality = JSON.parse(selfContent.slice(start, i + 1)); break; } catch {}
+        start = -1;
+      }}
+    }
+    if (!selfPersonality) {
+      if (streamEl) streamEl.style.display = 'none';
+      throw new Error('AI 返回的 JSON 解析失败（内容过短或格式异常）');
+    }
   }
 
   // Analyze partner if applicable
@@ -1457,9 +1495,20 @@ ${samples.map(m => '• ' + m.content).join('\n')}
           }
         }
       );
-      const pMatch = pContent.match(/\{[\s\S]*\}/);
-      partnerPersonality = JSON.parse(pMatch ? pMatch[0] : pContent);
-    } catch { /* ignore parse failure for partner */ }
+      // Extract JSON — same logic as self
+      let pJsonStr = pContent;
+      const pCodeMatch = pContent.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
+      if (pCodeMatch) { pJsonStr = pCodeMatch[1]; }
+      else {
+        const pb = pContent.match(/\{[\s\S]*?\}/);
+        if (pb) pJsonStr = pb[0];
+        else {
+          const pd = pContent.match(/\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/);
+          if (pd) pJsonStr = pd[0];
+        }
+      }
+      partnerPersonality = JSON.parse(pJsonStr);
+    } catch (e) { console.warn('对方 AI 分析失败:', e.message); }
   }
 
   // Hide streaming output after completion
@@ -1468,7 +1517,6 @@ ${samples.map(m => '• ' + m.content).join('\n')}
   }
 
   STATE.personality = { self: selfPersonality, partner: partnerPersonality };
-  console.log('AI 分析结果:', JSON.stringify(STATE.personality, null, 2));
   updateProgress(80, 'AI 分析完成！');
 }
 
@@ -1492,10 +1540,9 @@ function generateReportHTML() {
   const style = p?.self?.style || null;
   const hasAI = !!p?.self;
   const hasDualAI = hasAI && !!p?.partner?.big5;
-  console.log('报告生成 - p:', p, 'big5:', !!big5, 'mbti:', !!mbti, 'style:', !!style, 'hasAI:', hasAI, 'hasDualAI:', hasDualAI);
 
-  // Helper: tag pill
-  const tag = (name, isPartner) => `<span class="${isPartner?'tag-partner':'tag-self'}"><span class="tag-av">${name.charAt(0)}</span>${name}</span>`;
+  // Helper: tag pill (escaped)
+  const tag = (name, isPartner) => `<span class="${isPartner?'tag-partner':'tag-self'}"><span class="tag-av">${esc(name.charAt(0))}</span>${esc(name)}</span>`;
 
   // Big5
   let big5HTML = '';
@@ -1533,12 +1580,12 @@ function generateReportHTML() {
     let notesHTML = '<div class="dual-notes"><div class="note-col self-note"><div class="note-col-header">' + tag(selfName, false) + ' 解读</div>';
     dimKeys.forEach((k, i) => {
       const d = big5[k] || {};
-      notesHTML += `<div class="note-item"><span class="note-dim">${dimZh[i]}</span><span class="note-text">${d.note||''}</span>${d.evidence?`<div class="note-evidence">💬 "${d.evidence}"</div>`:''}</div>`;
+      notesHTML += `<div class="note-item"><span class="note-dim">${dimZh[i]}</span><span class="note-text">${esc(d.note)}</span>${d.evidence?`<div class="note-evidence">💬 "${esc(d.evidence)}"</div>`:''}</div>`;
     });
     notesHTML += '</div><div class="note-col partner-note"><div class="note-col-header">' + tag(partnerName, true) + ' 解读</div>';
     dimKeys.forEach((k, i) => {
       const d = p.partner.big5[k] || {};
-      notesHTML += `<div class="note-item"><span class="note-dim">${dimZh[i]}</span><span class="note-text">${d.note||''}</span>${d.evidence?`<div class="note-evidence">💬 "${d.evidence}"</div>`:''}</div>`;
+      notesHTML += `<div class="note-item"><span class="note-dim">${dimZh[i]}</span><span class="note-text">${esc(d.note)}</span>${d.evidence?`<div class="note-evidence">💬 "${esc(d.evidence)}"</div>`:''}</div>`;
     });
     notesHTML += '</div></div>';
     big5HTML += notesHTML;
@@ -1556,16 +1603,16 @@ function generateReportHTML() {
         const d = data.dims?.[dim] || {};
         rows += `<div class="dim-row">
           <span class="dim-axis">${label}</span>
-          <span class="dim-lean ${isP?'panel-partner':''}">${d.lean||'?'}</span>
-          <span class="dim-strength">${d.strength||''}</span>
-          <div class="dim-reason">${d.reason||''}</div>
+          <span class="dim-lean ${isP?'panel-partner':''}">${esc(d.lean)||'?'}</span>
+          <span class="dim-strength">${esc(d.strength)}</span>
+          <div class="dim-reason">${esc(d.reason)}</div>
         </div>`;
       });
       return `<div class="person-panel ${isP?'panel-partner':''}">
         <div class="panel-header">${tag(name, isP)}</div>
-        <div class="mbti-type-badge ${isP?'panel-partner':''}">${data.type||'??'}</div>
-        <div class="mbti-conf">置信度：${data.confidence||''}</div>
-        <div class="mbti-note">${data.note||''}</div>
+        <div class="mbti-type-badge ${isP?'panel-partner':''}">${esc(data.type)||'??'}</div>
+        <div class="mbti-conf">置信度：${esc(data.confidence)}</div>
+        <div class="mbti-note">${esc(data.note)}</div>
         <div class="dims-list">${rows}</div>
       </div>`;
     };
@@ -1577,15 +1624,15 @@ function generateReportHTML() {
       const d = mbti.dims?.[dim] || {};
       rows += `<div class="dim-row">
         <span class="dim-axis">${label}</span>
-        <span class="dim-lean">${d.lean||'?'}</span>
-        <span class="dim-strength">${d.strength||''}</span>
-        <div class="dim-reason">${d.reason||''}</div>
+        <span class="dim-lean">${esc(d.lean)||'?'}</span>
+        <span class="dim-strength">${esc(d.strength)||''}</span>
+        <div class="dim-reason">${esc(d.reason)||''}</div>
       </div>`;
     });
     mbtiHTML = `<div class="person-panel" style="max-width:500px">
-      <div class="mbti-type-badge">${mbti.type||'??'}</div>
-      <div class="mbti-conf">置信度：${mbti.confidence||''}</div>
-      <div class="mbti-note">${mbti.note||''}</div>
+      <div class="mbti-type-badge">${esc(mbti.type)||'??'}</div>
+      <div class="mbti-conf">置信度：${esc(mbti.confidence)||''}</div>
+      <div class="mbti-note">${esc(mbti.note)||''}</div>
       <div class="dims-list">${rows}</div>
     </div>`;
   }
@@ -1594,10 +1641,10 @@ function generateReportHTML() {
   const stylePanel = (data, name, isP) => `
     <div class="${isP?'partner-col':''}">
       <div class="panel-header" style="margin-bottom:12px">${tag(name, isP)}</div>
-      <blockquote class="one-line ${isP?'partner':''}">"${data.one_line||''}"</blockquote>
-      <p class="summary-text">${data.summary||''}</p>
-      <ul class="strengths">${(data.strengths||[]).map(s => `<li>${s}</li>`).join('')}</ul>
-      ${(data.fun_facts||[]).length ? `<div class="fun-facts-label">意外发现</div>${data.fun_facts.map(f => `<div class="fun-fact">${f}</div>`).join('')}` : ''}
+      <blockquote class="one-line ${isP?'partner':''}">"${esc(data.one_line)}"</blockquote>
+      <p class="summary-text">${esc(data.summary)}</p>
+      <ul class="strengths">${(data.strengths||[]).map(s => `<li>${esc(s)}</li>`).join('')}</ul>
+      ${(data.fun_facts||[]).length ? `<div class="fun-facts-label">意外发现</div>${data.fun_facts.map(f => `<div class="fun-fact">${esc(f)}</div>`).join('')}` : ''}
     </div>`;
 
   let styleHTML = '';
@@ -1653,7 +1700,6 @@ function generateReportHTML() {
 
   // Emotion HTML
   const emo = s.emotion;
-  const emoTotal = Math.max(1, emo.positive + emo.negative + emo.question);
   const emoHTML = (data, name, isP) => {
     const t = Math.max(1, data.positive + data.negative + data.question);
     return `<div style="margin-bottom:10px">
@@ -1679,12 +1725,12 @@ function generateReportHTML() {
   <h1>🍪 微信聊天人格分析报告</h1>
   <div class="header-meta">${new Date().toLocaleDateString('zh-CN',{year:'numeric',month:'long',day:'numeric'})}</div>
   <div class="header-vs">
-    <div class="person-pill"><div class="av av-self">${selfName.charAt(0)}</div><span class="pill-name">${selfName}</span></div>
-    ${hasPartner ? `<span class="vs-divider">VS</span><div class="person-pill"><div class="av av-partner">${partnerName.charAt(0)}</div><span class="pill-name">${partnerName}</span></div>` : ''}
+    <div class="person-pill"><div class="av av-self">${esc(selfName.charAt(0))}</div><span class="pill-name">${esc(selfName)}</span></div>
+    ${hasPartner ? `<span class="vs-divider">VS</span><div class="person-pill"><div class="av av-partner">${esc(partnerName.charAt(0))}</div><span class="pill-name">${esc(partnerName)}</span></div>` : ''}
   </div>
 </div>
 <div class="stats" style="--i:1">
-  <div class="stat"><div class="stat-num">${s.total.toLocaleString()}</div><div class="stat-lbl">${selfName} 发出的消息</div></div>
+  <div class="stat"><div class="stat-num">${s.total.toLocaleString()}</div><div class="stat-lbl">${esc(selfName)} 发出的消息</div></div>
   <div class="stat"><div class="stat-num">${s.avgLength}</div><div class="stat-lbl">平均消息字数</div></div>
   <div class="stat"><div class="stat-num">${spanStr}</div><div class="stat-lbl">数据覆盖时长</div></div>
 </div>
@@ -1696,7 +1742,7 @@ function generateReportHTML() {
 ${big5HTML ? `<div class="section" style="--i:7"><div class="section-title">🧠 大五人格分析 (Big Five)</div>${big5HTML}</div>` : ''}
 ${mbtiHTML ? `<div class="section" style="--i:8"><div class="section-title">🔮 MBTI 推断</div>${mbtiHTML}</div>` : ''}
 ${styleHTML ? `<div class="section" style="--i:9"><div class="section-title">✨ AI 对${hasDualAI?'你们':'你'}的总结</div>${styleHTML}</div>` : ''}
-${reliability ? `<div style="font-size:.78em;color:var(--tx-400,#8a7a6a);text-align:center;padding:12px">📋 ${reliability}</div>` : ''}
+${reliability ? `<div style="font-size:.78em;color:var(--tx-400,#8a7a6a);text-align:center;padding:12px">📋 ${esc(reliability)}</div>` : ''}
 <div class="disc">⚠️ 本报告基于语言模式的统计推断，仅供娱乐与自我探索，不构成心理学诊断。<br>MBTI 信效度存在学术争议；Big Five 具有更强的研究支撑，但仍需谨慎解读。<div class="brand">🍪 姜饼探AI · Ginger Report v2.0</div></div>`;
 
   return bodyHTML;
@@ -2056,6 +2102,7 @@ body {
   const chartScript = chartData ? `
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+  if (typeof echarts === 'undefined') return; // CDN blocked (file:// protocol)
   var D = ${JSON.stringify(chartData)};
   var BROWN = ['#8b5e3c','#c68642','#d4956a','#e8c49a'];
   var TEAL  = ['#4a7b6f','#6faa9c','#8abfb8','#b4d8d2'];
@@ -2154,10 +2201,13 @@ document.addEventListener('DOMContentLoaded', function() {
 <\/script>` : '';
 
   return `<!DOCTYPE html><html lang="zh"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>微信聊天人格分析 · ${selfName}${hasPartner ? ' & ' + partnerName : ''}</title>
+<title>微信聊天人格分析 · ${esc(selfName)}${hasPartner ? ' & ' + esc(partnerName) : ''}</title>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"><\/script>
 <script src="https://cdn.jsdelivr.net/npm/echarts-wordcloud@2.1.0/dist/echarts-wordcloud.min.js"><\/script>
-<style>${STYLES}</style></head><body><div class="container">
+<style>${STYLES}
+/* offline charts fallback */
+.chart-cell:empty::after { content: '📊 图表需通过 HTTP 服务查看'; display: flex; align-items: center; justify-content: center; height: 100%; color: var(--tx-400); font-size: .85em; background: var(--surface-2); border-radius: var(--r-sm); }
+</style></head><body><div class="container">
 ${bodyHTML}
 </div>${chartScript}</body></html>`;
 }
@@ -2225,6 +2275,9 @@ async function generateReport() {
         // Regenerate report with AI data
         updateProgress(85, '正在整合 AI 分析结果...');
         try {
+          // Dispose charts before destroying DOM
+          Object.values(STATE.charts).forEach(c => { try { c.dispose(); } catch {} });
+          STATE.charts = {};
           const newBody = generateReportHTML();
           reportContent.innerHTML = newBody;
         } catch (genErr) {
@@ -2298,7 +2351,7 @@ function downloadReport() {
   a.href = url;
   a.download = `wechat-report-${Date.now()}.html`;
   a.click();
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 3000);
   toast('✅ 报告已下载！');
 }
 
@@ -2310,8 +2363,14 @@ function scrollToTop() {
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+function esc(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
 function toast(msg) {
   const el = document.getElementById('toast');
+  if (!el) return;
   el.textContent = msg;
   el.classList.add('show');
   setTimeout(() => el.classList.remove('show'), 3000);
